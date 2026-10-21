@@ -113,15 +113,23 @@ function zeitWert(min) {
   return `${h}:${m}`;
 }
 
+// Gestellte Mahlzeiten: Schlüssel am Reisetag, Schalterbeschriftung und Wort für die zugeklappte Zeile
+const MAHLZEITEN = [
+  { schluessel: 'fruehstueck', schalter: 'Frühstück gestellt', wort: 'Frühstück' },
+  { schluessel: 'mittag', schalter: 'Mittagessen gestellt', wort: 'Mittagessen' },
+  { schluessel: 'abend', schalter: 'Abendessen gestellt', wort: 'Abendessen' },
+];
+
 // Tage der Reise aus den Feldern des Sheets (Vorschau und Sichern). Leer, solange Angaben fehlen.
-function tageAusFeldern(f) {
+// abweichungen: { 'JJJJ-MM-TT': { abend: true, ... } } überschreibt die Mahlzeiten des Tages.
+function tageAusFeldern(f, abweichungen = {}) {
   const von = f.von.input.value;
   const bis = f.bis.input.value;
   const beginn = minutenAusUhrzeit(f.abfahrt.input.value);
   const ende = minutenAusUhrzeit(f.rueck.input.value);
   if (!von || !bis || bis < von || beginn === null || ende === null) return [];
   const land = landAusEingabe(f.land.input.value) ?? landAnzeige(f.land.input.value);
-  return reiseTageErzeugen({
+  const tage = reiseTageErzeugen({
     von,
     bis,
     beginn,
@@ -131,6 +139,7 @@ function tageAusFeldern(f) {
     zusatz: f.zusatz.input.value.trim(),
     hotelFruehstueck: von !== bis && f.fruehstueck.input.checked,
   });
+  return tage.map((t) => ({ ...t, ...abweichungen[t.datum] }));
 }
 
 // Sheet „Dienstreise eintragen“. vorgabe: {von, bis, beginn, ende, land, anlass, zusatz} (alles optional).
@@ -212,11 +221,30 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
 
   let beschaeftigt = false;
 
+  // Abweichungen je Reisetag (nur Mahlzeiten, die vom Standard abweichen) und offene Zeilen der Vorschau
+  const abweichungen = {};
+  const offen = new Set();
+  // Schalter, der nach dem Neuzeichnen wieder den Fokus bekommt
+  let fokusId = null;
+
+  // Eine Mahlzeit eines Tages umschalten. Entspricht der Wert dem Standard, wird die Abweichung gelöscht.
+  function mahlzeitGeaendert(datum, schluessel, input) {
+    const standard = tageAusFeldern(f).find((t) => t.datum === datum);
+    if (!standard) return;
+    const eintrag = { ...abweichungen[datum] };
+    if (input.checked === standard[schluessel]) delete eintrag[schluessel];
+    else eintrag[schluessel] = input.checked;
+    if (Object.keys(eintrag).length) abweichungen[datum] = eintrag;
+    else delete abweichungen[datum];
+    fokusId = input.id;
+    vorschauZeichnen();
+  }
+
   // Vorschau und Schalter „Frühstück im Hotel“ (nur bei mehreren Tagen) an die Eingaben anpassen
   function vorschauZeichnen() {
     const einzeln = f.von.input.value === f.bis.input.value;
     f.fruehstueck.box.hidden = einzeln;
-    const tage = tageAusFeldern(f);
+    const tage = tageAusFeldern(f, abweichungen);
     vorschauListe.replaceChildren();
     if (tage.length === 0) {
       const leer = document.createElement('p');
@@ -229,8 +257,14 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     for (const t of tage) {
       const v = verpflegung(t);
       if (v !== null) summe += v;
-      const zeile = document.createElement('div');
-      zeile.className = 'liste-zeile';
+      const id = `reise-tag-${t.datum}`;
+      const zeile = document.createElement('button');
+      zeile.type = 'button';
+      zeile.id = `${id}-knopf`;
+      zeile.className = 'liste-zeile reise-vorschau-tag';
+      zeile.setAttribute('aria-controls', `${id}-felder`);
+      const ist = offen.has(t.datum);
+      zeile.setAttribute('aria-expanded', String(ist));
       const text = document.createElement('span');
       text.className = 'liste-text';
       const titel = document.createElement('span');
@@ -240,12 +274,40 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
       unter.className = 'liste-unter';
       const anreise = t.anreise ? ', An- oder Rückreise' : '';
       unter.textContent = `${uhrzeit(t.beginn)} bis ${uhrzeit(t.ende)}${anreise}`;
+      const gestellt = MAHLZEITEN.filter((m) => t[m.schluessel]).map((m) => m.wort);
+      if (gestellt.length) {
+        const kurz = document.createElement('span');
+        kurz.className = 'reise-vorschau-gestellt';
+        kurz.textContent = ` · ${gestellt.join(', ')} gestellt`;
+        unter.append(kurz);
+      }
       text.append(titel, unter);
       const wert = document.createElement('span');
       wert.className = 'liste-wert';
       wert.textContent = v === null ? 'offen' : euro(v);
       zeile.append(text, wert);
-      vorschauListe.append(zeile);
+
+      const felder = document.createElement('div');
+      felder.className = 'reise-vorschau-felder';
+      felder.id = `${id}-felder`;
+      felder.setAttribute('role', 'group');
+      felder.setAttribute('aria-labelledby', zeile.id);
+      felder.hidden = !ist;
+      for (const m of MAHLZEITEN) {
+        const schalter = reiseSchalter(`${id}-${m.schluessel}`, m.schalter, Boolean(t[m.schluessel]));
+        schalter.input.addEventListener('change', () => mahlzeitGeaendert(t.datum, m.schluessel, schalter.input));
+        felder.append(schalter.box);
+      }
+
+      zeile.addEventListener('click', () => {
+        const auf = !offen.has(t.datum);
+        if (auf) offen.add(t.datum);
+        else offen.delete(t.datum);
+        zeile.setAttribute('aria-expanded', String(auf));
+        felder.hidden = !auf;
+      });
+
+      vorschauListe.append(zeile, felder);
     }
     const summeZeile = document.createElement('div');
     summeZeile.className = 'liste-zeile reise-summe-zeile';
@@ -257,6 +319,10 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     summeWert.textContent = euro(Math.round(summe * 100) / 100);
     summeZeile.append(summeText, summeWert);
     vorschauListe.append(summeZeile);
+    if (fokusId) {
+      document.getElementById(fokusId)?.focus();
+      fokusId = null;
+    }
   }
 
   // Bis folgt Von, wenn Bis davor liegt
@@ -265,8 +331,19 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     if (von && f.bis.input.value < von) f.bis.input.value = von;
   });
 
-  form.addEventListener('input', vorschauZeichnen);
-  form.addEventListener('change', vorschauZeichnen);
+  // „Frühstück im Hotel“ ändert das Frühstück aller Tage: Frühstück-Abweichungen verwerfen, Mittag und Abend behalten
+  f.fruehstueck.input.addEventListener('change', () => {
+    for (const datum of Object.keys(abweichungen)) {
+      delete abweichungen[datum].fruehstueck;
+      if (Object.keys(abweichungen[datum]).length === 0) delete abweichungen[datum];
+    }
+  });
+
+  // Änderungen in der Vorschau übernehmen die Schalter selbst (mahlzeitGeaendert).
+  // Der Ereignispfad gilt schon beim Auslösen; nach dem Neuzeichnen ist das Ziel nicht mehr im Dokument.
+  const inVorschau = (e) => e.composedPath().includes(vorschauListe);
+  form.addEventListener('input', (e) => { if (!inVorschau(e)) vorschauZeichnen(); });
+  form.addEventListener('change', (e) => { if (!inVorschau(e)) vorschauZeichnen(); });
 
   // Prüfen und speichern
   async function absenden() {
@@ -304,7 +381,7 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
       return;
     }
 
-    const tage = tageAusFeldern(f);
+    const tage = tageAusFeldern(f, abweichungen);
     const belegt = new Set(vorhanden.map((r) => r.datum));
     const doppelt = tage.find((t) => belegt.has(t.datum));
     if (doppelt) {

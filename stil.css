@@ -690,3 +690,17 @@ input.tag-pause-eingabe { width: 12rem; max-width: 100%; margin-left: auto; text
 .reise-tag { text-align: left; }
 .reise-hinweis { color: var(--warnung); font-weight: 600; }
 .reise-status { margin-top: 10px; }
+
+/* Vorschau Dienstreise: jeder Tag einzeln aufklappbar (reise_sheet.js) */
+.reise-vorschau-tag::after {
+  content: ""; flex: none; width: 8px; height: 8px; margin-left: 4px;
+  border-right: 2px solid var(--text-2); border-bottom: 2px solid var(--text-2);
+  transform: rotate(45deg); transition: transform 200ms var(--feder);
+}
+.reise-vorschau-tag[aria-expanded="true"]::after { transform: rotate(-135deg); }
+.reise-vorschau-gestellt { font-weight: 600; color: var(--text); }
+.reise-vorschau-felder { display: flex; flex-direction: column; gap: 4px; padding: 0 20px 14px; }
+.reise-vorschau-felder[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) {
+  .reise-vorschau-tag::after { transition: none; }
+}
