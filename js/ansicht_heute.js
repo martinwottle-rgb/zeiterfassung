@@ -17,7 +17,6 @@ const ABWESENHEIT_NAME = {
   ueberstunden: 'Überstundenabbau',
   sonstiges: 'Abwesend',
 };
-const DARSTELLUNGEN = [['system', 'System'], ['light', 'Hell'], ['dark', 'Dunkel']];
 
 // Escaping für alles, was aus Daten stammt.
 function esc(wert) {
@@ -405,7 +404,6 @@ async function vorschlaegeLaden(platz, kontext) {
 export async function zeigen(ziel, kontext) {
   const { heute, jetzt } = kontext;
   const { bloecke, abwesenheiten: abw, einstellungen: einst } = kontext.daten;
-  const aktuell = einst.darstellung ?? 'system';
 
   const info = tagesInfo(bloecke, abw, einst, heute, jetzt);
   const tage = woche(bloecke, abw, einst, wochenbeginn(heute), jetzt);
@@ -426,20 +424,12 @@ export async function zeigen(ziel, kontext) {
   else if (info.soll === 0) untertitel = 'frei';
   else untertitel = `von ${dauer(info.soll)}`;
 
-  const darstellungKnoepfe = DARSTELLUNGEN.map(([wert, text]) =>
-    `<button class="segment-teil" type="button" aria-pressed="${wert === aktuell}" data-darstellung="${wert}"><span>${text}</span></button>`
-  ).join('');
-
   ziel.innerHTML = `
     <header class="kopf glas">
       <div>
         <p class="eyebrow">Heute</p>
         <h1>${esc(langesDatum(heute))}</h1>
       </div>
-      <fieldset class="darstellung">
-        <legend class="nur-sr">Darstellung</legend>
-        <div class="segment">${darstellungKnoepfe}</div>
-      </fieldset>
     </header>
 
     <section class="hero" aria-label="Arbeitszeit heute">
@@ -481,11 +471,6 @@ export async function zeigen(ziel, kontext) {
       ${kontext.laptop ? '<div class="vorschlaege-platz" data-vorschlaege></div>' : ''}
       ${hinweisListe.length > 0 ? karteHinweise(hinweisListe) : ''}
     </div>`;
-
-  // Darstellung: Segment setzt die Einstellung über den Kontext.
-  ziel.querySelectorAll('[data-darstellung]').forEach((knopf) => {
-    knopf.addEventListener('click', () => kontext.darstellungSetzen(knopf.dataset.darstellung));
-  });
 
   // Stempeln: während des Aufrufs alle Stempelknöpfe sperren.
   const stempelKnoepfe = [...ziel.querySelectorAll('[data-stempel]')];
