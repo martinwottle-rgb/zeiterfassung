@@ -704,3 +704,44 @@ input.tag-pause-eingabe { width: 12rem; max-width: 100%; margin-left: auto; text
 @media (prefers-reduced-motion: reduce) {
   .reise-vorschau-tag::after { transition: none; }
 }
+
+/* Dienstreisen (ansicht_reisen.js, reisen-Klassen): Reisekarten, Monatsabschnitte, Löschen im Sheet */
+.reisen-liste { display: flex; flex-direction: column; gap: 12px; }
+.reisen-monat { display: flex; flex-direction: column; gap: 12px; margin-top: 8px; }
+.reisen-monat-kopf {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; padding: 0 4px;
+}
+.reisen-monat-kopf h2 { font-size: 1.125rem; font-weight: 700; letter-spacing: -.01em; }
+.reisen-monat-summe { font-weight: 600; white-space: nowrap; }
+.reisen-monat-summe .notiz { margin-right: 4px; font-weight: 500; }
+.reisen-aktion { margin-top: 4px; }
+.reisen-karte {
+  display: flex; align-items: center; justify-content: space-between; gap: 16px; width: 100%; margin: 0;
+  padding: 16px 20px; text-align: left; color: var(--text); font: inherit; cursor: pointer;
+  transition: transform 120ms ease-out;
+}
+.reisen-karte:hover { background: var(--segment); }
+.reisen-karte:active { transform: scale(.99); }
+.reisen-karte:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.reisen-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.reisen-anlass { font-size: 1.1875rem; font-weight: 700; letter-spacing: -.01em; line-height: 1.25; overflow-wrap: anywhere; }
+.reisen-land {
+  font-size: .9375rem; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.reisen-zeit, .reisen-tage { font-size: .875rem; color: var(--text-2); }
+.reisen-summe { flex: none; font-size: 1.0625rem; font-weight: 700; white-space: nowrap; color: var(--text); }
+.reisen-loeschen { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; margin-top: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .reisen-karte { transition: none; }
+}
+
+
+/* Reiterleiste auf dem iPhone: sechs Reiter passen nur mit kurzen Beschriftungen (Vorlesen nutzt die lange) */
+.reiter .kurz { display: none; }
+@media (max-width: 599px) {
+  .reiter .lang { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .reiter .kurz { display: inline; }
+  .navi ul { justify-content: space-between; }
+  .navi li { flex: 1 1 0; min-width: 0; }
+  .navi .reiter { width: 100%; padding-inline: 2px; }
+}

@@ -1,12 +1,13 @@
 // Dienstreise eintragen (Sheet): mehrtägige Reise als Reisetage speichern, mit Vorschau der Verpflegung.
 // Dazu gemeinsame Helfer für tag_sheet.js und ansicht_monat.js: Euro, Länderliste, Betragsprüfung, Feldfehler.
-import { alle, speichern } from './speicher.js';
+import { alle, loeschen, speichern } from './speicher.js';
 import { LAENDER } from './laender.js';
 import { reiseTageErzeugen, verpflegung } from './reisen.js';
 import { minutenAusUhrzeit, uhrzeit, wochentag } from './zeit.js';
 
 const KURZ = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const EURO = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const BETRAG = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false });
 
 // Betrag mit zwei Nachkommastellen und Komma: „26,40 €“
 export function euro(betrag) {
@@ -120,6 +121,42 @@ const MAHLZEITEN = [
   { schluessel: 'abend', schalter: 'Abendessen gestellt', wort: 'Abendessen' },
 ];
 
+// Zusätzliche Beträge je Reisetag (Euro), in der aufgeklappten Tageszeile
+const BETRAEGE = [
+  { schluessel: 'uebernachtung', name: 'Übernachtung (Euro)' },
+  { schluessel: 'fahrt', name: 'Fahrt (Euro)' },
+  { schluessel: 'neben', name: 'Nebenkosten (Euro)' },
+];
+const BETRAG_FEHLER = 'Bitte einen Betrag in Euro angeben, zum Beispiel 12,50.';
+
+// Betrag für ein Feld: leer bei 0, sonst mit Komma ohne Tausenderpunkt
+function betragText(n) {
+  return n ? BETRAG.format(n) : '';
+}
+
+// Auf Cent runden
+function cent2(x) {
+  return Math.round(x * 100) / 100;
+}
+
+// Summe der zusätzlichen Beträge eines Tages
+function extras(t) {
+  return (t.uebernachtung ?? 0) + (t.fahrt ?? 0) + (t.neben ?? 0);
+}
+
+// Wert der Tageszeile: Verpflegung plus Beträge, „offen“ bei unbekanntem Land
+function tagWert(t) {
+  const v = verpflegung(t);
+  return v === null ? 'offen' : euro(cent2(v + extras(t)));
+}
+
+// Gesamtsumme der Vorschau (offene Tage zählen 0)
+function summeVon(tage) {
+  let summe = 0;
+  for (const t of tage) summe += (verpflegung(t) ?? 0) + extras(t);
+  return cent2(summe);
+}
+
 // Tage der Reise aus den Feldern des Sheets (Vorschau und Sichern). Leer, solange Angaben fehlen.
 // abweichungen: { 'JJJJ-MM-TT': { abend: true, ... } } überschreibt die Mahlzeiten des Tages.
 function tageAusFeldern(f, abweichungen = {}) {
@@ -142,25 +179,48 @@ function tageAusFeldern(f, abweichungen = {}) {
   return tage.map((t) => ({ ...t, ...abweichungen[t.datum] }));
 }
 
-// Sheet „Dienstreise eintragen“. vorgabe: {von, bis, beginn, ende, land, anlass, zusatz} (alles optional).
-// Speichert jeden Reisetag einzeln über speichern('reisen', tag).
+// Sheet „Dienstreise eintragen“ oder „Dienstreise bearbeiten“.
+// vorgabe: {von, bis, beginn, ende, land, anlass, zusatz} (alles optional), oder {tage} mit den vorhandenen
+// Reisetagen einer Reise (Bearbeiten). Gesichert wird je Tag über speichern('reisen', tag), die alten Tage
+// bekommen den Grabstein.
 export async function reiseOeffnen(vorgabe = {}, kontext) {
   const heuteText = kontext.heute;
-  const vorhanden = (await alle('reisen')).filter((r) => !r.geloescht);
+  const bearbeitet = Array.isArray(vorgabe.tage) && vorgabe.tage.length > 0
+    ? [...vorgabe.tage].sort((a, b) => (a.datum === b.datum ? a.beginn - b.beginn : a.datum < b.datum ? -1 : 1))
+    : null;
+  const erste = bearbeitet?.[0];
+  const letzte = bearbeitet?.[bearbeitet.length - 1];
+  const quelle = bearbeitet
+    ? {
+      von: erste.datum,
+      bis: letzte.datum,
+      beginn: erste.beginn,
+      ende: letzte.ende,
+      land: erste.land,
+      anlass: erste.anlass,
+      zusatz: erste.zusatz ?? '',
+    }
+    : vorgabe;
+  // „Frühstück im Hotel“ gilt, wenn alle Tage außer dem ersten Frühstück haben
+  const hotel = Boolean(bearbeitet && bearbeitet.length > 1 && bearbeitet.slice(1).every((t) => t.fruehstueck));
+  const bestehendeId = bearbeitet?.find((t) => t.reiseId)?.reiseId ?? null;
+  const alteIds = new Set((bearbeitet ?? []).map((t) => t.id));
+  // Belegte Tage ohne die Tage der Reise, die gerade bearbeitet wird
+  const vorhanden = (await alle('reisen')).filter((r) => !r.geloescht && !alteIds.has(r.id));
 
   const form = document.createElement('form');
   form.noValidate = true;
   form.className = 'formular-stapel reise-form';
 
   const f = {
-    anlass: reiseFeld('reise-anlass', 'Anlass und Ort', 'text', vorgabe.anlass ?? ''),
-    land: reiseFeld('reise-land', 'Land', 'text', landAnzeige(vorgabe.land ?? 'Deutschland')),
-    von: reiseFeld('reise-von', 'Von', 'date', vorgabe.von ?? heuteText),
-    bis: reiseFeld('reise-bis', 'Bis', 'date', vorgabe.bis ?? vorgabe.von ?? heuteText),
-    abfahrt: reiseFeld('reise-abfahrt', 'Abfahrt (erster Tag)', 'time', zeitWert(vorgabe.beginn ?? 480)),
-    rueck: reiseFeld('reise-rueck', 'Rückkehr (letzter Tag)', 'time', zeitWert(vorgabe.ende ?? 960)),
-    fruehstueck: reiseSchalter('reise-fruehstueck', 'Frühstück im Hotel', false),
-    zusatz: reiseFeld('reise-zusatz', 'Zusatz', 'text', vorgabe.zusatz ?? ''),
+    anlass: reiseFeld('reise-anlass', 'Anlass und Ort', 'text', quelle.anlass ?? ''),
+    land: reiseFeld('reise-land', 'Land', 'text', landAnzeige(quelle.land ?? 'Deutschland')),
+    von: reiseFeld('reise-von', 'Von', 'date', quelle.von ?? heuteText),
+    bis: reiseFeld('reise-bis', 'Bis', 'date', quelle.bis ?? quelle.von ?? heuteText),
+    abfahrt: reiseFeld('reise-abfahrt', 'Abfahrt (erster Tag)', 'time', zeitWert(quelle.beginn ?? 480)),
+    rueck: reiseFeld('reise-rueck', 'Rückkehr (letzter Tag)', 'time', zeitWert(quelle.ende ?? 960)),
+    fruehstueck: reiseSchalter('reise-fruehstueck', 'Frühstück im Hotel', hotel),
+    zusatz: reiseFeld('reise-zusatz', 'Zusatz', 'text', quelle.zusatz ?? ''),
   };
   f.anlass.input.required = true;
   f.land.input.setAttribute('list', 'reise-laender');
@@ -200,7 +260,19 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
   const knoepfe = document.createElement('div');
   knoepfe.className = 'reise-fuss-knoepfe';
   knoepfe.append(abbrechenKnopf, sichernKnopf);
-  fuss.append(gesamtFehler, knoepfe);
+
+  // Reise löschen: nur beim Bearbeiten, erst mit Rückfrage
+  const loeschZone = document.createElement('div');
+  loeschZone.className = 'reisen-loeschen';
+  const startKnopf = document.createElement('button');
+  startKnopf.type = 'button';
+  startKnopf.className = 'knopf gefahr';
+  startKnopf.textContent = 'Reise löschen';
+  startKnopf.addEventListener('click', () => rueckfrageZeigen());
+  loeschZone.replaceChildren(startKnopf);
+  loeschZone.hidden = !bearbeitet;
+
+  fuss.append(gesamtFehler, knoepfe, loeschZone);
 
   const laenderDatalist = landListe('reise-laender');
 
@@ -226,6 +298,58 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
   const offen = new Set();
   // Schalter, der nach dem Neuzeichnen wieder den Fokus bekommt
   let fokusId = null;
+  // Wertfelder der Tageszeilen (datum -> Element) und Summenfeld, für Änderungen ohne Neuaufbau
+  const wertElemente = new Map();
+  let summeWert = null;
+  // Ungültig eingetippte Beträge, je „datum|feld“: bleiben stehen und blockieren das Sichern
+  const roh = new Map();
+
+  // Beim Bearbeiten: Abweichungen von der Vorgabe aus den gespeicherten Tagen übernehmen
+  if (bearbeitet) {
+    const standard = tageAusFeldern(f);
+    for (const t of bearbeitet) {
+      const std = standard.find((s) => s.datum === t.datum) ?? {};
+      const eintrag = {};
+      for (const m of MAHLZEITEN) {
+        if (Boolean(t[m.schluessel]) !== Boolean(std[m.schluessel])) eintrag[m.schluessel] = Boolean(t[m.schluessel]);
+      }
+      for (const b of BETRAEGE) {
+        if ((t[b.schluessel] ?? 0) !== (std[b.schluessel] ?? 0)) eintrag[b.schluessel] = t[b.schluessel] ?? 0;
+      }
+      if (Object.keys(eintrag).length) abweichungen[t.datum] = eintrag;
+    }
+  }
+
+  // Ein Betrag eines Tages geändert (Komma oder Punkt, leer ist 0). Nur Werte und Summe werden aktualisiert.
+  function betragGeaendert(datum, schluessel, feld) {
+    const merk = `${datum}|${schluessel}`;
+    const betrag = betragAusText(feld.input.value);
+    if (Number.isNaN(betrag)) {
+      roh.set(merk, feld.input.value);
+      feldFehler(feld, BETRAG_FEHLER);
+    } else {
+      roh.delete(merk);
+      feldFehler(feld, '');
+      const standard = tageAusFeldern(f).find((t) => t.datum === datum);
+      const eintrag = { ...abweichungen[datum] };
+      if (betrag === (standard?.[schluessel] ?? 0)) delete eintrag[schluessel];
+      else eintrag[schluessel] = betrag;
+      if (Object.keys(eintrag).length) abweichungen[datum] = eintrag;
+      else delete abweichungen[datum];
+      feld.input.value = betragText(betrag);
+    }
+    vorschauWerteAktualisieren();
+  }
+
+  // Tageswerte und Summe in der Vorschau aktualisieren, ohne die Zeilen neu aufzubauen (der Fokus bleibt)
+  function vorschauWerteAktualisieren() {
+    const tage = tageAusFeldern(f, abweichungen);
+    for (const t of tage) {
+      const wert = wertElemente.get(t.datum);
+      if (wert) wert.textContent = tagWert(t);
+    }
+    if (summeWert) summeWert.textContent = euro(summeVon(tage));
+  }
 
   // Eine Mahlzeit eines Tages umschalten. Entspricht der Wert dem Standard, wird die Abweichung gelöscht.
   function mahlzeitGeaendert(datum, schluessel, input) {
@@ -246,17 +370,16 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     f.fruehstueck.box.hidden = einzeln;
     const tage = tageAusFeldern(f, abweichungen);
     vorschauListe.replaceChildren();
+    wertElemente.clear();
     if (tage.length === 0) {
+      summeWert = null;
       const leer = document.createElement('p');
       leer.className = 'notiz reise-vorschau-leer';
       leer.textContent = 'Von, Bis, Abfahrt und Rückkehr angeben, dann erscheinen die Tage hier.';
       vorschauListe.append(leer);
       return;
     }
-    let summe = 0;
     for (const t of tage) {
-      const v = verpflegung(t);
-      if (v !== null) summe += v;
       const id = `reise-tag-${t.datum}`;
       const zeile = document.createElement('button');
       zeile.type = 'button';
@@ -284,7 +407,8 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
       text.append(titel, unter);
       const wert = document.createElement('span');
       wert.className = 'liste-wert';
-      wert.textContent = v === null ? 'offen' : euro(v);
+      wert.textContent = tagWert(t);
+      wertElemente.set(t.datum, wert);
       zeile.append(text, wert);
 
       const felder = document.createElement('div');
@@ -298,6 +422,20 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
         schalter.input.addEventListener('change', () => mahlzeitGeaendert(t.datum, m.schluessel, schalter.input));
         felder.append(schalter.box);
       }
+      const betragBox = document.createElement('div');
+      betragBox.className = 'reise-betraege';
+      for (const b of BETRAEGE) {
+        const merk = `${t.datum}|${b.schluessel}`;
+        const feld = reiseFeld(`${id}-${b.schluessel}`, b.name, 'text',
+          roh.has(merk) ? roh.get(merk) : betragText(t[b.schluessel]));
+        feld.input.inputMode = 'decimal';
+        feld.input.autocomplete = 'off';
+        feld.input.placeholder = '0,00';
+        if (roh.has(merk)) feldFehler(feld, BETRAG_FEHLER);
+        feld.input.addEventListener('change', () => betragGeaendert(t.datum, b.schluessel, feld));
+        betragBox.append(feld.box);
+      }
+      felder.append(betragBox);
 
       zeile.addEventListener('click', () => {
         const auf = !offen.has(t.datum);
@@ -314,9 +452,9 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     const summeText = document.createElement('span');
     summeText.className = 'liste-titel';
     summeText.textContent = 'Summe';
-    const summeWert = document.createElement('span');
+    summeWert = document.createElement('span');
     summeWert.className = 'liste-wert reise-summe-wert';
-    summeWert.textContent = euro(Math.round(summe * 100) / 100);
+    summeWert.textContent = euro(summeVon(tage));
     summeZeile.append(summeText, summeWert);
     vorschauListe.append(summeZeile);
     if (fokusId) {
@@ -380,6 +518,11 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
       ersterFehler.focus();
       return;
     }
+    if (roh.size > 0) {
+      gesamtFehler.textContent = 'Bitte die Beträge in der Vorschau prüfen.';
+      gesamtFehler.hidden = false;
+      return;
+    }
 
     const tage = tageAusFeldern(f, abweichungen);
     const belegt = new Set(vorhanden.map((r) => r.datum));
@@ -390,10 +533,14 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
       return;
     }
 
+    // Eine Reise hat eine reiseId; beim Bearbeiten bleibt die bestehende
+    const reiseId = bestehendeId ?? crypto.randomUUID();
     beschaeftigt = true;
     sichernKnopf.disabled = true;
     try {
-      for (const tag of tage) await speichern('reisen', tag);
+      for (const tag of tage) await speichern('reisen', { ...tag, reiseId });
+      // Erst nach dem Speichern der neuen Tage die alten als Grabsteine markieren
+      for (const alt of bearbeitet ?? []) await loeschen('reisen', alt.id);
       kontext.sheet.schliessen();
     } catch (e) {
       console.error(e);
@@ -410,7 +557,46 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     absenden();
   });
 
+  // Rückfrage im Sheet, dann alle Tage der Reise als Grabstein
+  function rueckfrageZeigen() {
+    const frage = document.createElement('p');
+    frage.className = 'notiz';
+    frage.id = 'reise-loeschen-frage';
+    frage.textContent = `Reise vom ${langesDatumDe(erste.datum)} bis ${langesDatumDe(letzte.datum)} wirklich löschen?`;
+    const nein = document.createElement('button');
+    nein.type = 'button';
+    nein.className = 'knopf';
+    nein.textContent = 'Nein, behalten';
+    nein.addEventListener('click', () => loeschZone.replaceChildren(startKnopf));
+    const ja = document.createElement('button');
+    ja.type = 'button';
+    ja.className = 'knopf gefahr';
+    ja.textContent = 'Ja, löschen';
+    ja.addEventListener('click', () => reiseLoeschen());
+    const knopfZeile = document.createElement('div');
+    knopfZeile.className = 'reise-fuss-knoepfe';
+    knopfZeile.append(nein, ja);
+    loeschZone.replaceChildren(frage, knopfZeile);
+    nein.focus();
+  }
+
+  async function reiseLoeschen() {
+    if (beschaeftigt || !bearbeitet) return;
+    beschaeftigt = true;
+    try {
+      for (const t of bearbeitet) await loeschen('reisen', t.id);
+      kontext.sheet.schliessen();
+    } catch (e) {
+      console.error(e);
+      gesamtFehler.textContent = 'Löschen hat nicht geklappt. Bitte noch einmal versuchen.';
+      gesamtFehler.hidden = false;
+      loeschZone.replaceChildren(startKnopf);
+    } finally {
+      beschaeftigt = false;
+    }
+  }
+
   vorschauZeichnen();
-  kontext.sheet.oeffnen('Dienstreise eintragen', form);
+  kontext.sheet.oeffnen(bearbeitet ? 'Dienstreise bearbeiten' : 'Dienstreise eintragen', form);
   return form;
 }

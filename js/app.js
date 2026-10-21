@@ -5,7 +5,7 @@ import { mitternachtPruefen } from './stempeln.js';
 import { abgleichen, einrichtungLaden } from './abgleich.js';
 import { abwesenheitAm, sollMinuten, stempelZustand } from './rechnen.js';
 
-const ANSICHTEN = ['heute', 'woche', 'monat', 'abwesenheiten', 'einstellungen'];
+const ANSICHTEN = ['heute', 'woche', 'monat', 'reisen', 'abwesenheiten', 'einstellungen'];
 const ansicht = document.getElementById('ansicht');
 const rahmen = document.querySelector('.rahmen');
 const hintergrund = document.getElementById('sheet-hintergrund');

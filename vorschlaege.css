@@ -49,3 +49,44 @@
 @media (prefers-reduced-motion: no-preference) {
   .vorschlag-kapsel { transition: background .2s var(--feder), color .2s var(--feder), transform .2s var(--feder); }
 }
+
+/* Klickbare Karten auf Heute: die Überschrift ist der eine Link oder Knopf der Karte.
+   Ein ::after deckt die ganze Karte ab, innere Knöpfe liegen darüber (z-index) und behalten ihre Funktion. */
+.karte.karte-link { position: relative; transition: background-color .2s var(--feder), transform .2s var(--feder); }
+.karte-ziel {
+  margin: 0; padding: 0; border: 0; background: none; color: inherit;
+  font: inherit; font-weight: 600; text-align: left; text-decoration: none; cursor: pointer;
+}
+.karte-ziel::after { content: ""; position: absolute; inset: 0; border-radius: var(--r-karte); }
+.karte-ziel:focus-visible { outline: none; }
+.karte-link .knopf, .karte-link .woche-tag-knopf { position: relative; z-index: 1; }
+
+/* Pfeil rechts oben, erscheint beim Darüberfahren und bei Tastaturfokus */
+.karte-link::before {
+  content: "›"; position: absolute; top: 12px; right: 18px; font-size: 1.375rem; line-height: 1;
+  color: var(--text-2); opacity: 0; pointer-events: none; transition: opacity .2s var(--feder);
+}
+.karte-link:hover::before, .karte-link:has(:focus-visible)::before { opacity: 1; }
+
+/* Hover: Hintergrund hebt sich leicht an, Karte schwebt minimal */
+@media (hover: hover) {
+  .karte-link:hover { background: color-mix(in srgb, var(--karte) 94%, var(--text)); }
+}
+.karte-link:hover { transform: translateY(-1px); }
+
+/* Tastatur: Fokusring um die ganze Karte */
+.karte-link:focus-within:has(:focus-visible) { outline: 2px solid var(--akzent); outline-offset: 3px; }
+
+/* Wochentag-Knopf: Zeile wie bisher, mit Hover und eigenem Abstand */
+.woche-tag-knopf {
+  width: 100%; margin: 8px 0 0; padding: 6px 8px; border: 0; border-radius: 10px;
+  background: transparent; color: inherit; font: inherit; font-size: .9375rem; text-align: left; cursor: pointer;
+}
+.woche-tag-knopf:hover { background: var(--segment); }
+.woche-tag-knopf:active { transform: scale(.99); }
+.woche-tag-knopf .balken { display: block; }
+
+@media (prefers-reduced-motion: reduce) {
+  .karte.karte-link, .karte-link::before, .woche-tag-knopf { transition: none; }
+  .karte-link:hover { transform: none; }
+}

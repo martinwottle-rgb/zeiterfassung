@@ -92,3 +92,82 @@ export function reisekostenMonat(reisen, jahr, monat) {
     summe: cent(verpflegungSumme + uebernachtung + fahrtSumme + nebenSumme),
   };
 }
+
+// Reihenfolge der Reisetage: Datum, dann Beginn
+function tagSortierung(a, b) {
+  if (a.datum === b.datum) return a.beginn - b.beginn;
+  return a.datum < b.datum ? -1 : 1;
+}
+
+// Eine Reise aus ihren Tagen: Tage sortiert, Summen je Art und gesamt, auf Cent gerundet.
+function reiseAusTagen(id, roh) {
+  const tage = [...roh].sort(tagSortierung);
+  let verp = 0, uebern = 0, fahrt = 0, neben = 0;
+  for (const t of tage) {
+    verp += verpflegung(t) ?? 0; // unbekanntes Land zählt 0
+    uebern += t.uebernachtung ?? 0;
+    fahrt += t.fahrt ?? 0;
+    neben += t.neben ?? 0;
+  }
+  const verpSumme = cent(verp);
+  const uebernSumme = cent(uebern);
+  const fahrtSumme = cent(fahrt);
+  const nebenSumme = cent(neben);
+  const erster = tage[0];
+  return {
+    id,
+    tage,
+    von: erster.datum,
+    bis: tage[tage.length - 1].datum,
+    land: erster.land,
+    anlass: erster.anlass,
+    verpflegung: verpSumme,
+    uebernachtung: uebernSumme,
+    fahrt: fahrtSumme,
+    neben: nebenSumme,
+    summe: cent(verpSumme + uebernSumme + fahrtSumme + nebenSumme),
+  };
+}
+
+// Aktive Reisetage zu Reisen zusammenfassen (Reiter Dienstreisen).
+// Gleiche reiseId gehören zusammen. Tage ohne reiseId bilden mit dem folgenden Kalendertag eine Reise,
+// wenn Anlass und Land gleich sind und der Tag bis 24:00 dauert (ende === 1440); über mehrere Tage
+// entsteht so eine Kette. Ergebnis nach von (Beginn) sortiert.
+export function reisenGruppieren(reisen) {
+  const aktiv = reisen.filter((r) => !r.geloescht && typeof r.datum === 'string');
+  const nachId = new Map();
+  const ohneId = [];
+  for (const t of aktiv) {
+    if (t.reiseId) {
+      if (!nachId.has(t.reiseId)) nachId.set(t.reiseId, []);
+      nachId.get(t.reiseId).push(t);
+    } else {
+      ohneId.push(t);
+    }
+  }
+
+  const gruppen = [];
+  for (const [id, tage] of nachId) gruppen.push(reiseAusTagen(id, tage));
+
+  const frei = new Set(ohneId);
+  for (const start of [...ohneId].sort(tagSortierung)) {
+    if (!frei.has(start)) continue;
+    frei.delete(start);
+    const tage = [start];
+    let letzter = start;
+    while (letzter.ende === TAG) {
+      const folge = ohneId.find((x) => frei.has(x) && x.datum === tagPlus(letzter.datum, 1)
+        && x.anlass === letzter.anlass && x.land === letzter.land);
+      if (!folge) break;
+      frei.delete(folge);
+      tage.push(folge);
+      letzter = folge;
+    }
+    gruppen.push(reiseAusTagen(start.id, tage));
+  }
+
+  return gruppen.sort((a, b) => {
+    if (a.von !== b.von) return a.von < b.von ? -1 : 1;
+    return String(a.id) < String(b.id) ? -1 : String(a.id) > String(b.id) ? 1 : 0;
+  });
+}

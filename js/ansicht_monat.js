@@ -5,6 +5,7 @@ import { kontostand, tagesInfo } from './rechnen.js';
 import { tagOeffnen } from './tag_sheet.js';
 import { alle } from './speicher.js';
 import { reisekostenMonat, verpflegung } from './reisen.js';
+import { reisekostenKnopfVerdrahten } from './reisekosten_knopf.js';
 import { euro, kurzesDatum, landAnzeige, reiseOeffnen } from './reise_sheet.js';
 
 const KURZ = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
@@ -107,50 +108,6 @@ function reiseAbschnitt(reise, laptop) {
 function reiseVon(jahr, monat, heuteText) {
   if (monatText(jahr, monat) === heuteText.slice(0, 7)) return heuteText;
   return tageImMonat(jahr, monat).find((d) => wochentag(d) < 5) ?? heuteText;
-}
-
-// Reisekostentabelle über den lokalen Server erstellen (nur am Laptop)
-async function reisekostentabelleErstellen(reise, monat, knopf, status, ordnerKnopf) {
-  const tage = reise.tage.map(({ id, geaendert, geloescht, ...rest }) => rest);
-  knopf.disabled = true;
-  knopf.textContent = 'Excel arbeitet …';
-  status.textContent = '';
-  status.classList.remove('fehler');
-  ordnerKnopf.hidden = true;
-  try {
-    const antwort = await fetch('/api/reisekosten', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ monat, tage }),
-      cache: 'no-store',
-    });
-    const daten = await antwort.json().catch(() => null);
-    if (!antwort.ok || !daten?.datei) {
-      status.textContent = daten?.fehler ?? 'Die Reisekostentabelle konnte nicht erstellt werden.';
-      status.classList.add('fehler');
-      return;
-    }
-    const name = String(daten.datei).split(/[\\/]/).pop();
-    status.textContent = `Gespeichert: ${name}`;
-    // Excel-Werte (Spalte J) gegen die eigene Rechnung prüfen
-    const excel = Array.isArray(daten.verpflegung) ? daten.verpflegung.map(Number) : [];
-    const eigen = reise.tage.map((t) => verpflegung(t) ?? 0);
-    const abweichung = excel.length !== eigen.length || excel.some((w, i) => Math.abs(w - eigen[i]) > 0.01);
-    if (abweichung) {
-      const hinweis = document.createElement('span');
-      hinweis.className = 'reise-hinweis';
-      hinweis.textContent = 'Excel rechnet anders als die App: bitte prüfen.';
-      status.append(document.createElement('br'), hinweis);
-    }
-    ordnerKnopf.hidden = false;
-  } catch (e) {
-    console.error(e);
-    status.textContent = 'Die Reisekostentabelle konnte nicht erstellt werden. Läuft der Laptop-Server?';
-    status.classList.add('fehler');
-  } finally {
-    knopf.disabled = false;
-    knopf.textContent = 'Reisekostentabelle erstellen';
-  }
 }
 
 // Zählt ein Tag schon zum Saldo bis heute? Vergangene Tage ja; heute erst nach „Gehen“.
@@ -339,22 +296,5 @@ export async function zeigen(ziel, kontext) {
   reiseBox.querySelector('[data-reise-neu]').addEventListener('click', () => {
     reiseOeffnen({ von: reiseVon(jahr, monatNr, heuteText) }, kontext).catch((e) => console.error(e));
   });
-  const status = reiseBox.querySelector('[data-status]');
-  const ordnerKnopf = reiseBox.querySelector('[data-ordner]');
-  ordnerKnopf.addEventListener('click', async () => {
-    try {
-      const antwort = await fetch('/api/ordner-oeffnen', { method: 'POST', cache: 'no-store' });
-      if (!antwort.ok) throw new Error(`Status ${antwort.status}`);
-    } catch (e) {
-      console.error(e);
-      status.textContent = 'Der Ordner konnte nicht geöffnet werden.';
-      status.classList.add('fehler');
-    }
-  });
-  const excelKnopf = reiseBox.querySelector('[data-excel]');
-  if (excelKnopf) {
-    excelKnopf.addEventListener('click', () => {
-      reisekostentabelleErstellen(reise, monatText(jahr, monatNr), excelKnopf, status, ordnerKnopf);
-    });
-  }
+  reisekostenKnopfVerdrahten(reiseBox, reise, monatText(jahr, monatNr));
 }

@@ -257,7 +257,7 @@ function verlauf(bloecke, zustand, jetzt) {
       </section>`;
 }
 
-// Karte Diese Woche: Mo bis Fr mit Balken zum Tagessoll.
+// Karte Diese Woche: Mo bis Fr mit Balken zum Tagessoll. Jede Zeile ist ein Knopf und öffnet ihren Tag.
 function karteWoche(tage, heute) {
   const zeilen = WOCHENTAGE_KURZ.map((kurz, i) => {
     const t = tage[i];
@@ -266,13 +266,13 @@ function karteWoche(tage, heute) {
     const wert = laeuftJetzt ? 'läuft' : dauer(t.ist);
     const klasse = laeuftJetzt ? ' class="laeuft"' : '';
     return `
-        <div class="woche-zeile"><span class="tag">${kurz}</span><div class="balken"><i${klasse} style="width: ${pr(anteil * 100)}%"></i></div><span class="wert zahl">${wert}</span></div>`;
+        <button class="woche-zeile woche-tag-knopf" type="button" data-tag-datum="${esc(t.datum)}" aria-label="${esc(`${langesDatum(t.datum)} bearbeiten`)}"><span class="tag">${kurz}</span><div class="balken"><i${klasse} style="width: ${pr(anteil * 100)}%"></i></div><span class="wert zahl">${wert}</span></button>`;
   }).join('');
   const istWoche = tage.reduce((summe, t) => summe + t.ist, 0);
   const sollWoche = tage.reduce((summe, t) => summe + t.soll, 0);
   return `
-      <section class="karte" aria-labelledby="k-woche">
-        <h2 id="k-woche">Diese Woche</h2>${zeilen}
+      <section class="karte karte-link" aria-labelledby="k-woche">
+        <h2 id="k-woche"><a class="karte-ziel" href="#woche">Diese Woche</a></h2>${zeilen}
         <div class="saldo"><span>Woche bisher</span><strong class="zahl">${dauer(istWoche)} von ${dauer(sollWoche)}</strong></div>
       </section>`;
 }
@@ -287,8 +287,8 @@ function karteHinweise(liste) {
         <div class="hinweis">${symbol}<div><p>${esc(h.text)}</p></div></div>`;
   }).join('');
   return `
-      <section class="karte breit" aria-labelledby="k-hinweise">
-        <h2 id="k-hinweise">Hinweise</h2>${punkte}
+      <section class="karte karte-link breit" aria-labelledby="k-hinweise">
+        <h2 id="k-hinweise"><button class="karte-ziel" type="button" data-tag-heute>Hinweise</button></h2>${punkte}
       </section>`;
 }
 
@@ -449,19 +449,19 @@ export async function zeigen(ziel, kontext) {
     <div class="raster">
       ${karteWoche(tage, heute)}
 
-      <section class="karte" aria-labelledby="k-konto">
-        <h2 id="k-konto">Überstundenkonto</h2>
+      <section class="karte karte-link" aria-labelledby="k-konto">
+        <h2 id="k-konto"><a class="karte-ziel" href="#monat">Überstundenkonto</a></h2>
         <p class="kennzahl zahl">${dauerMitVorzeichen(konto)}</p>
       </section>
 
-      <section class="karte" aria-labelledby="k-urlaub">
-        <h2 id="k-urlaub">Urlaub</h2>
+      <section class="karte karte-link" aria-labelledby="k-urlaub">
+        <h2 id="k-urlaub"><a class="karte-ziel" href="#abwesenheiten">Urlaub</a></h2>
         <p class="urlaub-text">${zahlText(rest)} von ${zahlText(anspruch)} Tagen übrig</p>
         <div class="fortschritt" aria-hidden="true"><i style="width: ${pr(restAnteil * 100)}%"></i></div>
       </section>
 
-      <section class="karte" aria-labelledby="k-monat">
-        <h2 id="k-monat">Monat</h2>
+      <section class="karte karte-link" aria-labelledby="k-monat">
+        <h2 id="k-monat"><a class="karte-ziel" href="#monat">Monat</a></h2>
         <p class="zahl">${monatsname(monatNr)} bisher ${dauer(m.summeIst)}</p>
         <div class="karte-aktion">
           <a class="knopf knopf-karte" href="#monat">Monat ansehen</a>
@@ -493,6 +493,12 @@ export async function zeigen(ziel, kontext) {
   if (zeitleiste) {
     zeitleiste.addEventListener('click', () => tagOeffnen(heute, kontext));
   }
+
+  // Karten Hinweise und Wochentage: öffnen den Tag im Sheet.
+  ziel.querySelector('[data-tag-heute]')?.addEventListener('click', () => tagOeffnen(heute, kontext));
+  ziel.querySelectorAll('[data-tag-datum]').forEach((knopf) => {
+    knopf.addEventListener('click', () => tagOeffnen(knopf.dataset.tagDatum, kontext));
+  });
 
   // Vorschläge nachladen, ohne die Ansicht zu bremsen (nur am Laptop)
   const platz = ziel.querySelector('[data-vorschlaege]');
