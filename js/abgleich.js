@@ -57,13 +57,21 @@ export function normalisiert(daten) {
 
 // Adresse der Datei im Repo, z. B. https://api.github.com/repos/besitzer/name/contents/daten.json.enc
 function adresse(e) {
-  const repo = String(e.repo).split('/').map(encodeURIComponent).join('/');
+  const repo = repoName(e.repo).split('/').map(encodeURIComponent).join('/');
   const pfad = String(e.pfad).split('/').map(encodeURIComponent).join('/');
   return `https://api.github.com/repos/${repo}/contents/${pfad}`;
 }
 
+// Nimmt auch die ganze Adresse oder Leerzeichen: „https://github.com/name/repo.git “ → „name/repo“.
+export function repoName(text) {
+  return String(text || '').trim()
+    .replace(/^https?:\/\/(www\.)?github\.com\//i, '')
+    .replace(/\.git$/i, '')
+    .replace(/\/+$/, '');
+}
+
 function kopf(token, mitInhalt) {
-  const k = { 'Authorization': 'Bearer ' + token, 'Accept': 'application/vnd.github+json' };
+  const k = { 'Authorization': 'Bearer ' + String(token).trim(), 'Accept': 'application/vnd.github+json' };
   if (mitInhalt) k['Content-Type'] = 'application/json';
   return k;
 }
@@ -71,10 +79,16 @@ function kopf(token, mitInhalt) {
 // Fehlerhafte Antwort in die passenden Fehlertexte umwandeln.
 function pruefeStatus(antwort) {
   if (antwort.ok) return;
-  if (antwort.status === 401 || antwort.status === 403) {
+  if (antwort.status === 401) {
     throw new Error('Der Token wird nicht angenommen.');
   }
-  throw new Error('GitHub ist nicht erreichbar.');
+  if (antwort.status === 403) {
+    throw new Error('Der Token darf nicht schreiben: bei „Contents“ muss „Read and write“ stehen.');
+  }
+  if (antwort.status === 404) {
+    throw new Error('Repository nicht gefunden oder der Token hat keinen Zugriff darauf.');
+  }
+  throw new Error(`GitHub meldet einen Fehler (${antwort.status}).`);
 }
 
 // Netzfehler wie HTTP-Fehler behandeln.
@@ -82,7 +96,7 @@ async function anfrage(fetchFn, url, opt) {
   try {
     return await fetchFn(url, opt);
   } catch {
-    throw new Error('GitHub ist nicht erreichbar.');
+    throw new Error('GitHub ist nicht erreichbar (keine Verbindung).');
   }
 }
 
