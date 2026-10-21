@@ -90,3 +90,54 @@
   .karte.karte-link, .karte-link::before, .woche-tag-knopf { transition: none; }
   .karte-link:hover { transform: none; }
 }
+
+/* Abgleich-Etikett im Kopf auf Heute: kleine Glaskapsel mit Sync-Symbol */
+.abgleich-etikett {
+  flex: none; display: inline-flex; align-items: center; gap: 6px;
+  min-height: 32px; padding: 0 12px; border: 1px solid var(--glas-kante); border-radius: 999px;
+  background: var(--glas-stark); color: var(--text-2);
+  box-shadow: inset 0 1px 0 var(--glas-kante);
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+  font: inherit; font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap; cursor: pointer;
+}
+.abgleich-etikett[hidden] { display: none; }
+.abgleich-etikett svg {
+  width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.abgleich-etikett.gestoert { color: var(--warnung); }
+.abgleich-etikett:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+@media (hover: hover) {
+  .abgleich-etikett:hover { color: var(--text); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .abgleich-etikett { transition: transform .2s var(--feder), color .2s var(--feder); }
+  .abgleich-etikett:active { transform: scale(.97); }
+  .abgleich-etikett.laeuft svg { animation: abgleich-dreht 1s linear infinite; }
+}
+
+/* Ziehen zum Aktualisieren: Glaskreis oben mittig, unter der sicheren Zone. Folgt dem Finger über --zug und --dreh */
+.zieh-indikator {
+  position: fixed; z-index: 30; top: calc(env(safe-area-inset-top, 0px) + 8px); left: 0; right: 0; margin: 0 auto;
+  width: 40px; height: 40px; display: grid; place-items: center; border-radius: 50%;
+  border: 1px solid var(--glas-kante); background: var(--glas-stark); color: var(--text-2);
+  box-shadow: inset 0 1px 0 var(--glas-kante), var(--glas-schatten);
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+  opacity: 0; pointer-events: none;
+  transform: translateY(var(--zug, 0px)) rotate(var(--dreh, 0deg));
+}
+.zieh-indikator svg {
+  width: 20px; height: 20px; fill: none; stroke: currentColor;
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.zieh-indikator.sichtbar { opacity: 1; }
+.zieh-indikator.bereit { color: var(--akzent-schrift); }
+@media (prefers-reduced-motion: no-preference) {
+  .zieh-indikator.federt { transition: transform 420ms var(--feder), opacity 220ms var(--feder), color 200ms var(--feder); }
+  .zieh-indikator.laedt svg { animation: abgleich-dreht 1s linear infinite; }
+}
+
+@keyframes abgleich-dreht { to { transform: rotate(360deg); } }
+
+/* Der Browser soll am oberen Rand nicht selbst neu laden */
+html, body { overscroll-behavior-y: contain; }

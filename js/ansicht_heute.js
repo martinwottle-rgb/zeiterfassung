@@ -401,6 +401,67 @@ async function vorschlaegeLaden(platz, kontext) {
   vorschlagKarte(platz, liste, kontext);
 }
 
+// Abgleich-Etikett im Kopf: zeigt den Stand des Abgleichs mit GitHub und startet ihn beim Antippen.
+const ABGLEICH_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14.6-4.5"/><path d="M19 3.5v4h-4"/><path d="M20 12a8 8 0 0 1-14.6 4.5"/><path d="M5 16.5v4h4"/></svg>';
+let abgleichBeobachter = null;
+
+function isoDatum(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Zeitpunkt in Worten, bezogen auf den heutigen Tag (JJJJ-MM-TT)
+function abgeglichenText(ms, heuteIso) {
+  const d = new Date(ms);
+  const iso = isoDatum(d);
+  if (iso === heuteIso) {
+    return `Abgeglichen ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+  const [j, m, t] = heuteIso.split('-').map(Number);
+  if (iso === isoDatum(new Date(j, m - 1, t - 1))) return 'Abgeglichen gestern';
+  return `Abgeglichen am ${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.`;
+}
+
+function abgleichEtikettZeichnen(knopf, kontext) {
+  const s = kontext.abgleichStatus();
+  knopf.hidden = !s.eingerichtet;
+  if (!s.eingerichtet) return;
+  let text;
+  if (s.laeuft) text = 'Gleicht ab';
+  else if (s.fehler) text = 'Abgleich gestört';
+  else if (s.zuletzt) text = abgeglichenText(s.zuletzt, kontext.heute);
+  else text = 'Noch nicht abgeglichen';
+
+  knopf.classList.toggle('laeuft', Boolean(s.laeuft));
+  knopf.classList.toggle('gestoert', !s.laeuft && Boolean(s.fehler));
+  knopf.querySelector('[data-abgleich-text]').textContent = text;
+  if (!s.laeuft && s.fehler) {
+    knopf.title = s.fehler;
+    knopf.setAttribute('aria-label', `Abgleich gestört: ${s.fehler}`);
+  } else {
+    knopf.removeAttribute('title');
+    knopf.removeAttribute('aria-label');
+  }
+}
+
+function abgleichEtikettAnbinden(knopf, kontext) {
+  if (abgleichBeobachter) {
+    window.removeEventListener('abgleich-status', abgleichBeobachter);
+    abgleichBeobachter = null;
+  }
+  knopf.addEventListener('click', () => kontext.abgleichJetzt());
+  abgleichEtikettZeichnen(knopf, kontext);
+  // Nur das Etikett neu setzen. Verschwindet die Ansicht, meldet sich der Beobachter ab.
+  abgleichBeobachter = () => {
+    if (!knopf.isConnected) {
+      window.removeEventListener('abgleich-status', abgleichBeobachter);
+      abgleichBeobachter = null;
+      return;
+    }
+    abgleichEtikettZeichnen(knopf, kontext);
+  };
+  window.addEventListener('abgleich-status', abgleichBeobachter);
+}
+
 export async function zeigen(ziel, kontext) {
   const { heute, jetzt } = kontext;
   const { bloecke, abwesenheiten: abw, einstellungen: einst } = kontext.daten;
@@ -430,6 +491,7 @@ export async function zeigen(ziel, kontext) {
         <p class="eyebrow">Heute</p>
         <h1>${esc(langesDatum(heute))}</h1>
       </div>
+      <button class="abgleich-etikett" type="button" data-abgleich aria-live="polite" hidden>${ABGLEICH_SVG}<span data-abgleich-text></span></button>
     </header>
 
     <section class="hero" aria-label="Arbeitszeit heute">
@@ -471,6 +533,9 @@ export async function zeigen(ziel, kontext) {
       ${kontext.laptop ? '<div class="vorschlaege-platz" data-vorschlaege></div>' : ''}
       ${hinweisListe.length > 0 ? karteHinweise(hinweisListe) : ''}
     </div>`;
+
+  // Abgleich-Etikett anbinden (Klick und Aktualisierung bei 'abgleich-status')
+  abgleichEtikettAnbinden(ziel.querySelector('[data-abgleich]'), kontext);
 
   // Stempeln: während des Aufrufs alle Stempelknöpfe sperren.
   const stempelKnoepfe = [...ziel.querySelectorAll('[data-stempel]')];

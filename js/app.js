@@ -244,7 +244,7 @@ async function zeichnen() {
       heute: heute(),
       laptop,
       abgleichJetzt: () => abgleichStarten('manuell'),
-      abgleichStatus: () => ({ ...abgleichZustand }),
+      abgleichStatus: () => ({ ...abgleichZustand, eingerichtet: einrichtungVollstaendig(einrichtungLaden()) }),
     };
     try {
       fokus = wechsel ? null : fokusMerken();
@@ -474,6 +474,94 @@ document.addEventListener('visibilitychange', async () => {
   zeichnen();
   abgleichStarten('sichtbar');
 });
+window.addEventListener('online', () => abgleichStarten('online'));
+
+// Ziehen zum Aktualisieren ----------------------------------------------
+// Nur Touch und Stift, nur ganz oben und nur nach unten. Der Indikator folgt mit halbem Weg (höchstens 90 px).
+// Ab 70 px Indikatorweg rastet er ein; beim Loslassen darüber läuft der Abgleich, sonst federt er sofort zurück.
+const ZIEH_SCHWELLE = 70;
+const ZIEH_MAX = 90;
+const SYNC_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 14.6-4.5"/><path d="M19 3.5v4h-4"/><path d="M20 12a8 8 0 0 1-14.6 4.5"/><path d="M5 16.5v4h4"/></svg>';
+
+const zieher = document.createElement('div');
+zieher.className = 'zieh-indikator';
+zieher.setAttribute('aria-hidden', 'true');
+zieher.innerHTML = SYNC_SVG;
+document.body.append(zieher);
+
+let zug = null; // { id, x, y, zieht, offset }: eine Ziehbewegung mit einem Finger
+let ziehLaedt = false;
+
+function zieherSetzen(offset, federt) {
+  zieher.classList.toggle('federt', federt);
+  zieher.classList.toggle('sichtbar', offset > 0);
+  zieher.classList.toggle('bereit', offset >= ZIEH_SCHWELLE);
+  zieher.style.setProperty('--zug', `${offset}px`);
+  zieher.style.setProperty('--dreh', `${offset * 4}deg`);
+}
+
+function zugAbbrechen() {
+  zug = null;
+  zieherSetzen(0, true);
+}
+
+async function ziehenAusloesen(offset) {
+  ziehLaedt = true;
+  zieher.classList.add('laedt');
+  zieherSetzen(offset, false);
+  try {
+    if (einrichtungVollstaendig(einrichtungLaden())) await abgleichStarten('ziehen');
+    await zeichnen();
+  } catch (e) {
+    console.error(e);
+  } finally {
+    ziehLaedt = false;
+    zieher.classList.remove('laedt');
+    zieherSetzen(0, true);
+  }
+}
+
+// Touch Events statt Pointer Events: iOS Safari löst bei Pointer Events pointercancel aus, sobald es selbst scrollen will.
+// Nur Touch kommt hier an, die Maus bleibt außen vor.
+ansicht.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 1 || zug || ziehLaedt || sheetOffen || window.scrollY !== 0) return;
+  const t = e.touches[0];
+  zug = { id: t.identifier, x: t.clientX, y: t.clientY, zieht: false, offset: 0 };
+}, { passive: true });
+
+document.addEventListener('touchmove', (e) => {
+  if (!zug) return;
+  const t = [...e.changedTouches].find((c) => c.identifier === zug.id);
+  if (!t) return;
+  const dx = t.clientX - zug.x;
+  const dy = t.clientY - zug.y;
+  if (window.scrollY !== 0 || sheetOffen) return zugAbbrechen();
+  if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) return zugAbbrechen(); // seitlich
+  if (dy < -8 && -dy > Math.abs(dx)) return zugAbbrechen(); // nach oben
+  if (dy <= 0) return;
+  // Am oberen Rand nach unten: der Browser soll weder scrollen noch neu laden
+  e.preventDefault();
+  if (!zug.zieht) {
+    if (dy <= 6) return;
+    zug.zieht = true;
+  }
+  if (Math.abs(dx) > dy) return zugAbbrechen(); // während des Ziehens seitlich
+  zug.offset = Math.min(dy * 0.5, ZIEH_MAX);
+  zieherSetzen(zug.offset, false);
+}, { passive: false });
+
+function zugEnde(e) {
+  if (!zug) return;
+  const t = [...e.changedTouches].find((c) => c.identifier === zug.id);
+  if (!t) return;
+  const offset = zug.offset;
+  const ausloesen = e.type === 'touchend' && zug.zieht && offset >= ZIEH_SCHWELLE;
+  zug = null;
+  if (ausloesen) ziehenAusloesen(offset);
+  else zieherSetzen(0, true);
+}
+document.addEventListener('touchend', zugEnde);
+document.addEventListener('touchcancel', zugEnde);
 
 // Start
 (async function start() {
