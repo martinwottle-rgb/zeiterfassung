@@ -1,0 +1,51 @@
+/* Vorschläge: Karte auf Heute, gestrichelte Balken und Kapsel in der Woche.
+   Farben nur über die Tokens aus stil.css, damit Hell und Dunkel gleich bleiben. */
+
+/* Der Platzhalter verschwindet im Layout, damit die Karte selbst ein Raster-Element ist */
+.vorschlaege-platz { display: contents; }
+
+/* Karte in Tönung wie im Entwurf A */
+.karte.vorschlaege { background: var(--tint); color: var(--tint-text); border-color: transparent; }
+.karte.vorschlaege h2 { color: var(--tint-text); }
+.vorschlag-liste { list-style: none; margin: 0; padding: 0; }
+.vorschlag-eintrag p { font-size: 1rem; line-height: 1.4; color: var(--tint-text); }
+.vorschlag-eintrag + .vorschlag-eintrag { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--linie); }
+.karte.vorschlaege .notiz { color: var(--tint-text); }
+.vorschlag-mehr {
+  display: inline-block; min-height: 40px; line-height: 40px;
+  color: var(--tint-text); font-size: .9375rem; font-weight: 600;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+
+/* Wochenzeile: Öffnen-Fläche neben der Kapsel. Die Zeile übernimmt Hover und Rahmen */
+.zeile-woche:hover { background: var(--segment); }
+.zeile-oeffnen {
+  display: flex; flex: 1 1 auto; align-items: center; gap: 12px; min-width: 0;
+  margin: 0; padding: 0; border: 0; background: transparent; color: inherit;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.zeile-oeffnen:focus-visible { outline: 2px solid var(--akzent); outline-offset: 4px; border-radius: 8px; }
+/* Schmal: die Kapsel bekommt eine eigene Zeile, der Balken bleibt lesbar */
+@media (max-width: 599px) {
+  .zeile-woche.hat-vorschlag { flex-wrap: wrap; row-gap: 8px; }
+  .zeile-woche.hat-vorschlag .zeile-oeffnen { flex: 1 1 100%; }
+}
+
+/* Vorschlag im Balken: gestrichelter Rahmen, leichte Akzentfläche */
+.block.vorschlag {
+  box-sizing: border-box; border: 2px dashed var(--akzent); border-radius: 4px; background: var(--akzent-weich);
+}
+
+/* Kapsel „Vorschlag übernehmen“ rechts in der Zeile */
+.vorschlag-kapsel {
+  flex: none; min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px;
+  background: var(--akzent-weich); color: var(--akzent-schrift);
+  font: inherit; font-size: .875rem; font-weight: 600; white-space: nowrap; cursor: pointer;
+}
+.vorschlag-kapsel:hover { background: var(--akzent); color: var(--akzent-text); }
+.vorschlag-kapsel:active { transform: scale(.97); }
+.vorschlag-kapsel:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.vorschlag-kapsel:disabled { opacity: .5; cursor: default; }
+@media (prefers-reduced-motion: no-preference) {
+  .vorschlag-kapsel { transition: background .2s var(--feder), color .2s var(--feder), transform .2s var(--feder); }
+}

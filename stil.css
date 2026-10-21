@@ -1,0 +1,692 @@
+/* Zeiterfassung: Stil. Grundlage ist Entwurf A (entwuerfe/entwurf_a.html), erweitert um Formulare, Sheet, Listen, Tabelle und Druck.
+   Glas nur auf der Bedienebene (Kopf, Navigation, Knöpfe, Sheet). Karten, Listen und Tabellen sind massiv. */
+
+:root {
+  --bg: #eef2f8;
+  --glow-1: rgba(10, 102, 216, .16);
+  --glow-2: rgba(120, 160, 255, .14);
+  --karte: #ffffff;
+  --karte-schatten: 0 1px 2px rgba(0, 0, 0, .04), 0 6px 20px rgba(0, 0, 0, .05);
+  --text: #1c1c1e;
+  --text-2: #5c5c63;
+  --linie: rgba(0, 0, 0, .08);
+  --spur: rgba(10, 102, 216, .12);
+  --spur-zeit: rgba(120, 120, 128, .14);
+  --segment: rgba(120, 120, 128, .14);
+  --akzent: #0a66d8;
+  --akzent-schrift: #0a5bc2;
+  --akzent-text: #ffffff;
+  --akzent-weich: rgba(10, 102, 216, .12);
+  --tint: #e4eefc;
+  --tint-text: #0b2140;
+  --erfolg: #1e7b45;
+  --warnung: #b35c00;
+  --schalter-an: #34c759;
+  --streifen-a: rgba(60, 60, 67, .30);
+  --streifen-b: rgba(60, 60, 67, .08);
+  --glas: rgba(255, 255, 255, .55);
+  --glas-stark: rgba(255, 255, 255, .74);
+  --glas-kante: rgba(255, 255, 255, .85);
+  --glas-unten: rgba(0, 0, 0, .05);
+  --glas-schatten: 0 12px 36px rgba(20, 40, 80, .14), 0 2px 6px rgba(20, 40, 80, .06);
+  --glas-filter: blur(24px) saturate(180%);
+  --r-karte: 20px;
+  --r-glas: 28px;
+  --feder: cubic-bezier(.2, .8, .2, 1);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0c11;
+    --glow-1: rgba(77, 155, 255, .16);
+    --glow-2: rgba(130, 100, 255, .12);
+    --karte: #1c1e25;
+    --karte-schatten: 0 1px 2px rgba(0, 0, 0, .4);
+    --text: #f2f2f7;
+    --text-2: #a4a4ad;
+    --linie: rgba(255, 255, 255, .10);
+    --spur: rgba(77, 155, 255, .18);
+    --spur-zeit: rgba(120, 120, 128, .24);
+    --segment: rgba(120, 120, 128, .24);
+    --akzent: #4d9bff;
+    --akzent-schrift: #7ab4ff;
+    --akzent-text: #06121f;
+    --akzent-weich: rgba(77, 155, 255, .18);
+    --tint: #16263d;
+    --tint-text: #eaf2ff;
+    --erfolg: #4cd08a;
+  --warnung: #ffb066;
+  --schalter-an: #30d158;
+    --streifen-a: rgba(235, 235, 245, .30);
+    --streifen-b: rgba(235, 235, 245, .08);
+    --glas: rgba(44, 46, 56, .55);
+    --glas-stark: rgba(44, 46, 56, .74);
+    --glas-kante: rgba(255, 255, 255, .22);
+    --glas-unten: rgba(255, 255, 255, .04);
+    --glas-schatten: 0 12px 36px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .35);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0a0c11;
+  --glow-1: rgba(77, 155, 255, .16);
+  --glow-2: rgba(130, 100, 255, .12);
+  --karte: #1c1e25;
+  --karte-schatten: 0 1px 2px rgba(0, 0, 0, .4);
+  --text: #f2f2f7;
+  --text-2: #a4a4ad;
+  --linie: rgba(255, 255, 255, .10);
+  --spur: rgba(77, 155, 255, .18);
+  --spur-zeit: rgba(120, 120, 128, .24);
+  --segment: rgba(120, 120, 128, .24);
+  --akzent: #4d9bff;
+  --akzent-schrift: #7ab4ff;
+  --akzent-text: #06121f;
+  --akzent-weich: rgba(77, 155, 255, .18);
+  --tint: #16263d;
+  --tint-text: #eaf2ff;
+  --erfolg: #4cd08a;
+  --warnung: #ffb066;
+  --schalter-an: #30d158;
+  --streifen-a: rgba(235, 235, 245, .30);
+  --streifen-b: rgba(235, 235, 245, .08);
+  --glas: rgba(44, 46, 56, .55);
+  --glas-stark: rgba(44, 46, 56, .74);
+  --glas-kante: rgba(255, 255, 255, .22);
+  --glas-unten: rgba(255, 255, 255, .04);
+  --glas-schatten: 0 12px 36px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .35);
+  color-scheme: dark;
+}
+:root[data-theme="light"] { color-scheme: light; }
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  font: 1rem/1.5 system-ui, -apple-system, "Segoe UI Variable Text", "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(900px 620px at 0% 0%, var(--glow-1), transparent 60%),
+    radial-gradient(860px 620px at 100% 100%, var(--glow-2), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  overflow-x: hidden;
+}
+h1, h2, p, ul, fieldset, legend { margin: 0; padding: 0; }
+fieldset { border: 0; min-width: 0; }
+ul { list-style: none; }
+.zahl { font-variant-numeric: tabular-nums; }
+.nur-sr {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* Glas: Kopf, Reiterleiste, Seitenleiste */
+.glas, .navi, .kopf {
+  background: var(--glas);
+  -webkit-backdrop-filter: var(--glas-filter);
+  backdrop-filter: var(--glas-filter);
+  border: 1px solid var(--glas-kante);
+  box-shadow: inset 0 1px 0 var(--glas-kante), inset 0 -1px 0 var(--glas-unten), var(--glas-schatten);
+}
+
+/* Rahmen und Seitenleiste */
+.rahmen { padding: 12px 12px 120px; }
+.navi {
+  position: fixed; z-index: 20; left: 0; right: 0; bottom: 12px; margin: 0 auto;
+  width: min(560px, calc(100% - 24px)); padding: 6px; border-radius: 999px;
+}
+.navi ul { display: flex; gap: 2px; width: 100%; }
+.navi li { display: flex; flex: 1 1 auto; }
+.marke { display: none; }
+.reiter {
+  flex: 1 1 auto; min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px; padding: 6px 8px; border-radius: 999px; color: var(--text-2); text-decoration: none;
+  font-size: .75rem; font-weight: 500; line-height: 1.2; white-space: nowrap;
+  transition: transform 120ms ease-out;
+}
+.reiter svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.reiter[aria-current="page"] { color: var(--akzent-schrift); background: var(--akzent-weich); }
+.reiter:active { transform: scale(.97); }
+.reiter:focus-visible, .knopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+
+/* Kopf */
+.inhalt { max-width: 980px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.kopf {
+  position: sticky; top: 12px; z-index: 10; display: flex; flex-wrap: wrap; align-items: center;
+  justify-content: space-between; gap: 12px 16px; padding: 14px 18px; border-radius: var(--r-glas);
+}
+.eyebrow { font-size: .75rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--text-2); }
+.kopf h1 { font-size: 1.375rem; font-weight: 700; letter-spacing: -.015em; line-height: 1.2; }
+
+.darstellung { position: relative; }
+.segment {
+  position: relative; display: inline-flex; padding: 3px; border-radius: 999px; background: var(--segment);
+}
+.segment-teil { position: relative; }
+.segment-teil input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.segment-teil span {
+  display: block; padding: 7px 14px; min-height: 36px; border-radius: 999px; font-size: .875rem; font-weight: 600;
+  color: var(--text-2); cursor: pointer; white-space: nowrap; transition: background 200ms ease, color 200ms ease;
+}
+.segment-teil span:active { transform: scale(.97); }
+.segment-teil input:checked + span { background: var(--karte); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .14); }
+.segment-teil input:focus-visible + span { outline: 2px solid var(--akzent); outline-offset: 2px; }
+
+/* Knöpfe */
+.knopf {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 22px;
+  border-radius: 999px; border: 1px solid var(--glas-kante); background: var(--glas-stark); color: var(--text);
+  font: inherit; font-size: 1rem; font-weight: 600; cursor: pointer; text-align: center; white-space: nowrap;
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+  box-shadow: inset 0 1px 0 var(--glas-kante), 0 4px 14px rgba(20, 40, 80, .10);
+  transition: transform 120ms ease-out;
+}
+.knopf:active { transform: scale(.97); }
+.knopf-haupt {
+  background: var(--akzent); color: var(--akzent-text); border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 6px 18px rgba(10, 102, 216, .26);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.knopf-gross { min-height: 56px; padding: 0 40px; font-size: 1.25rem; }
+.knopf-klein { min-height: 44px; padding: 0 22px; }
+.knopf-karte { min-height: 40px; padding: 0 16px; font-size: .9375rem; }
+
+/* Ring */
+.hero { display: flex; flex-direction: column; align-items: center; gap: 22px; padding: 12px 0 4px; }
+.ring { position: relative; width: min(300px, 78vw); aspect-ratio: 1; }
+.ring svg { display: block; width: 100%; height: 100%; }
+.ring-spur { fill: none; stroke: var(--spur); stroke-width: 14; }
+.ring-stand { fill: none; stroke: var(--akzent); stroke-width: 14; stroke-linecap: round; stroke-dasharray: 71.25 100; }
+.ring-mitte {
+  position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+}
+.ring-wert { font-size: clamp(2.25rem, 10vw, 3.25rem); font-weight: 700; letter-spacing: -.025em; line-height: 1; }
+.ring-soll { margin-top: 6px; font-size: 1rem; color: var(--text-2); }
+.aktionen { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 12px; }
+
+/* Karten: massiv */
+.karte {
+  background: var(--karte); border: 1px solid var(--linie); border-radius: var(--r-karte);
+  box-shadow: var(--karte-schatten); padding: 18px 20px;
+}
+.karte h2 { font-size: 1rem; font-weight: 600; letter-spacing: -.005em; margin-bottom: 10px; }
+.raster { display: grid; grid-template-columns: 1fr; gap: 14px; }
+.kennzahl { font-size: 2rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+.notiz { font-size: .875rem; color: var(--text-2); }
+
+/* Zeitleiste */
+.zeit { padding-top: 16px; }
+.zeitleiste { position: relative; height: 44px; margin-top: 34px; border-radius: 12px; background: var(--spur-zeit); }
+.block { position: absolute; top: 0; bottom: 0; border-radius: 10px; }
+.block.arbeit, .block.laeuft { background: var(--akzent); }
+.block.pause {
+  background: repeating-linear-gradient(-45deg, var(--streifen-a) 0 4px, var(--streifen-b) 4px 8px);
+}
+.jetzt-linie { position: absolute; top: -6px; bottom: -6px; left: 57.14%; width: 2px; margin-left: -1px; border-radius: 2px; background: var(--text); }
+.jetzt { position: absolute; top: -26px; left: 57.14%; transform: translateX(-50%); font-size: .75rem; font-weight: 600; color: var(--text); }
+.stunden { position: relative; height: 22px; margin-top: 8px; }
+.stunden span { position: absolute; top: 0; transform: translateX(-50%); font-size: .75rem; color: var(--text-2); white-space: nowrap; }
+.stunden span:first-child { transform: none; }
+.stunden span:last-child { left: 100%; transform: translateX(-100%); }
+.legende { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 12px; font-size: .875rem; color: var(--text-2); }
+.legende li { display: flex; align-items: center; gap: 8px; }
+.legende i { display: inline-block; width: 12px; height: 12px; border-radius: 4px; }
+.legende .sw-arbeit { background: var(--akzent); }
+.legende .sw-pause { background: repeating-linear-gradient(-45deg, var(--streifen-a) 0 3px, var(--streifen-b) 3px 6px); }
+
+/* Woche */
+.woche-zeile { display: grid; grid-template-columns: 32px minmax(0, 1fr) 64px; align-items: center; gap: 10px; margin-top: 8px; font-size: .9375rem; }
+.woche-zeile .tag { color: var(--text-2); }
+.woche-zeile .wert { text-align: right; }
+.balken { height: 10px; border-radius: 999px; background: var(--spur); overflow: hidden; }
+.balken i { display: block; height: 100%; border-radius: inherit; background: var(--akzent); }
+.saldo {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-top: 14px;
+  padding-top: 12px; border-top: 1px solid var(--linie); font-size: .9375rem;
+}
+.saldo strong { font-size: 1.125rem; font-weight: 700; }
+
+/* Urlaub */
+.urlaub-text { font-size: 1.25rem; font-weight: 600; letter-spacing: -.01em; }
+.fortschritt { height: 8px; margin-top: 12px; border-radius: 999px; background: var(--spur); overflow: hidden; }
+.fortschritt i { display: block; height: 100%; width: 30%; border-radius: inherit; background: var(--akzent); }
+
+/* Vorschlag */
+.vorschlag { background: var(--tint); color: var(--tint-text); border-color: transparent; }
+.vorschlag h2 { color: var(--tint-text); }
+.vorschlag p { font-size: 1rem; }
+.vorschlag .aktionen { justify-content: flex-start; margin-top: 14px; }
+
+/* Reise, Monatsabschluss */
+.karte-aktion { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* Hinweis: dezent */
+.hinweis { display: flex; align-items: flex-start; gap: 12px; padding: 14px 18px; }
+.hinweis svg { flex: none; width: 22px; height: 22px; margin-top: 1px; fill: none; stroke: var(--erfolg); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.hinweis p { font-size: .9375rem; }
+.hinweis .notiz { margin-top: 2px; }
+
+/* Breite ab 600 px: zwei Karten nebeneinander */
+@media (min-width: 600px) {
+  .raster { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .raster .breit { grid-column: 1 / -1; }
+  .ring { width: min(300px, 60vw); }
+}
+
+/* Schmal: kleinerer Ring */
+@media (max-width: 599px) {
+  .kopf h1 { font-size: 1.25rem; }
+  .ring { width: min(232px, 70vw); }
+  .knopf-gross { padding: 0 36px; }
+}
+
+/* Ab 900 px: schwebende Glas-Seitenleiste links */
+@media (min-width: 900px) {
+  .rahmen { padding: 12px 24px 40px 272px; }
+  .navi {
+    left: 12px; right: auto; top: 12px; bottom: 12px; width: 236px; margin: 0;
+    padding: 22px 14px; border-radius: var(--r-glas); display: flex; flex-direction: column;
+  }
+  .navi ul { flex-direction: column; gap: 4px; }
+  .navi li { flex: none; }
+  .marke { display: block; padding: 4px 12px 18px; font-size: 1.125rem; font-weight: 700; letter-spacing: -.01em; }
+  .navi .reiter {
+    flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 44px; padding: 10px 14px;
+    border-radius: 14px; font-size: 1rem; color: var(--text);
+  }
+  .navi .reiter[aria-current="page"] { background: var(--karte); color: var(--text); box-shadow: var(--karte-schatten); }
+  .navi .reiter svg { width: 22px; height: 22px; }
+}
+
+/* Bewegung: nur wenn gewünscht */
+@media (prefers-reduced-motion: no-preference) {
+  .block.laeuft, .balken i.laeuft { animation: puls 2.4s ease-in-out infinite; }
+}
+@keyframes puls {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .6; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* Gefahr: zurückhaltendes Rot, nur als Schrift */
+:root { --gefahr: #b3261e; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --gefahr: #ff8f87; }
+}
+:root[data-theme="dark"] { --gefahr: #ff8f87; }
+
+[hidden] { display: none !important; }
+
+/* Knöpfe: Namen aus der Vorgabe, gleiche Optik wie oben */
+.knopf.haupt {
+  background: var(--akzent); color: var(--akzent-text); border-color: transparent;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 6px 18px rgba(10, 102, 216, .26);
+  -webkit-backdrop-filter: none; backdrop-filter: none;
+}
+.knopf.gefahr { color: var(--gefahr); }
+.knopf.klein { min-height: 44px; padding: 0 16px; font-size: .9375rem; }
+
+/* Formulare: Beschriftung über dem Feld, 16 px gegen den Zoom auf dem iPhone */
+.feld { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.feld > label, .feld > .feld-name { font-size: .875rem; font-weight: 600; color: var(--text-2); }
+input[type="time"], input[type="date"], input[type="number"], input[type="text"], select, textarea {
+  display: block; width: 100%; min-width: 0; min-height: 44px; margin: 0; padding: 10px 16px;
+  border: 1px solid var(--linie); border-radius: 999px; background: var(--karte); color: var(--text);
+  font: inherit; font-size: 16px; line-height: 1.3; font-variant-numeric: tabular-nums;
+}
+input[type="time"], input[type="date"], input[type="number"], input[type="text"] {
+  -webkit-appearance: none; appearance: none;
+}
+textarea { min-height: 96px; padding: 12px 16px; border-radius: 22px; line-height: 1.4; resize: vertical; }
+input::placeholder, textarea::placeholder { color: var(--text-2); opacity: 1; }
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--akzent); outline-offset: 2px; border-color: var(--akzent);
+}
+
+/* Sheet von unten: Hintergrund und Blatt, eingeblendet über .offen */
+.sheet-hintergrund {
+  position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, .34);
+  opacity: 0; transition: opacity 260ms var(--feder);
+}
+.sheet-hintergrund.offen { opacity: 1; }
+.sheet {
+  position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; margin: 0 auto;
+  width: 100%; max-width: 680px; max-height: 88vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  padding: 10px 20px calc(20px + env(safe-area-inset-bottom));
+  border: 1px solid var(--glas-kante); border-bottom: 0; border-radius: 26px 26px 0 0;
+  background: var(--glas-stark);
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+  box-shadow: inset 0 1px 0 var(--glas-kante), var(--glas-schatten);
+  transform: translateY(100%); transition: transform 380ms var(--feder);
+}
+.sheet.offen { transform: translateY(0); }
+.sheet::before {
+  content: ""; display: block; width: 36px; height: 5px; margin: 0 auto 14px;
+  border-radius: 999px; background: var(--streifen-a);
+}
+@media (min-width: 600px) {
+  .sheet { left: 50%; right: auto; width: 100%; max-width: 680px; translate: -50% 0; }
+}
+
+/* Listen: massive Gruppe mit feinen Trennlinien */
+.liste {
+  overflow: hidden; background: var(--karte); border: 1px solid var(--linie);
+  border-radius: var(--r-karte); box-shadow: var(--karte-schatten);
+}
+.liste-zeile {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; min-height: 52px; margin: 0; padding: 10px 20px;
+  border: 0; border-top: 1px solid var(--linie); background: transparent; color: var(--text);
+  font: inherit; text-align: left; text-decoration: none;
+}
+.liste-zeile:first-child { border-top: 0; }
+button.liste-zeile, a.liste-zeile { cursor: pointer; }
+button.liste-zeile:hover, a.liste-zeile:hover { background: var(--segment); }
+button.liste-zeile:active, a.liste-zeile:active { background: var(--spur); }
+.liste-zeile:focus-visible { outline: 2px solid var(--akzent); outline-offset: -2px; }
+.liste-text { display: flex; flex-direction: column; min-width: 0; }
+.liste-titel { font-size: 1rem; font-weight: 600; }
+.liste-unter { font-size: .875rem; color: var(--text-2); overflow-wrap: anywhere; }
+.liste-wert {
+  flex: none; margin-left: auto; font-size: 1rem; color: var(--text-2);
+  text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+
+/* Monatstabelle: Zahlen rechtsbündig, Wochenenden und Feiertage blasser, Wochensumme hervorgehoben */
+.tabelle-rahmen { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.monatstabelle {
+  width: 100%; border-collapse: collapse; font-size: .875rem; font-variant-numeric: tabular-nums;
+}
+.monatstabelle th, .monatstabelle td {
+  padding: 8px; border-bottom: 1px solid var(--linie); text-align: left; vertical-align: middle; white-space: nowrap;
+}
+.monatstabelle thead th { font-size: .75rem; font-weight: 600; letter-spacing: .02em; color: var(--text-2); }
+.monatstabelle .zahl { text-align: right; }
+.monatstabelle td.bemerkung { white-space: normal; min-width: 120px; }
+.monatstabelle .wochenende td, .monatstabelle .feiertag td { color: var(--text-2); opacity: .7; }
+.monatstabelle .wochensumme td {
+  font-weight: 700; background: var(--tint); color: var(--tint-text); border-bottom: 0;
+}
+
+/* Leere Ansicht */
+.leer { text-align: center; color: var(--text-2); padding: 40px 20px; font-size: 1rem; }
+
+/* Bewegung reduziert: Sheet nur einblenden, ohne Verschieben */
+@media (prefers-reduced-motion: reduce) {
+  .sheet-hintergrund { transition: opacity 200ms ease !important; }
+  .sheet { transition: opacity 200ms ease !important; transform: none !important; opacity: 0; }
+  .sheet.offen { opacity: 1; }
+}
+
+/* Druck: nur die Ansicht, A4 hoch, schwarz auf weiß, ohne Glas und Schatten */
+@media print {
+  @page { size: A4 portrait; margin: 15mm; }
+  html, body { background: #fff !important; color: #000 !important; min-height: 0; overflow: visible; }
+  body * { visibility: hidden !important; }
+  #ansicht, #ansicht * { visibility: visible !important; }
+  #ansicht { position: absolute; left: 0; top: 0; width: 100%; max-width: none; margin: 0; padding: 0; gap: 8px; }
+  #ansicht::before {
+    content: "Stundenzettel " attr(data-monat); display: block;
+    font-size: 1rem; font-weight: 700; color: #000; margin-bottom: 4px;
+  }
+  .rahmen { padding: 0; }
+  .navi, .sheet, .sheet-hintergrund, .nicht-drucken, .knopf, .segment, .darstellung { display: none !important; }
+  *, *::before, *::after {
+    background: transparent !important; color: #000 !important; box-shadow: none !important;
+    text-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+    border-color: #000 !important;
+  }
+  .karte, .liste, .kopf { border: 0 !important; padding: 0 !important; }
+  .monatstabelle .wochenende td, .monatstabelle .feiertag td { color: #555 !important; opacity: 1; }
+  .monatstabelle .wochensumme td { border-top: 1px solid #000 !important; font-weight: 700; }
+  .monatstabelle th, .monatstabelle td { padding: 4px 6px; }
+  .monatstabelle thead { display: table-header-group; }
+  .monatstabelle tr { break-inside: avoid; }
+  .tabelle-rahmen { overflow: visible; }
+}
+
+/* Ergänzungen: Klassen, die feste Inline-Stile der Ansichten ersetzen.
+   Reihenfolge zählt: spätere Regeln gleicher Stärke gewinnen (z. B. .fehler über .notiz). */
+
+/* Segment als Schaltflächen (Tagesdarstellung): Aktiv wie im Entwurf, Fokus sichtbar */
+button.segment-teil {
+  border: 0; background: transparent; font: inherit; color: inherit; padding: 0; cursor: pointer;
+}
+.segment-teil[aria-pressed="true"] > span {
+  background: var(--karte); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .14);
+}
+button.segment-teil:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 999px; }
+
+/* Tagesverlauf als Schaltfläche: sieht aus wie die Zeitleiste, ist klickbar */
+button.zeitleiste {
+  display: block; width: 100%; border: 0; padding: 0; background: var(--spur-zeit);
+  font: inherit; color: inherit; text-align: left; cursor: pointer;
+}
+button.zeitleiste:focus-visible { outline: 2px solid var(--akzent); outline-offset: 3px; }
+
+/* Warnsymbol in Hinweisen (Farbe aus --warnung) */
+.warnsymbol { stroke: var(--warnung); }
+.hinweis .warnsymbol { stroke: var(--warnung); }
+
+/* Links als Knöpfe: keine Unterstreichung, Schrift wie der Knopf; Akzentknopf behält seine Farbe */
+a.knopf, a.knopf:visited { text-decoration: none; color: inherit; }
+a.knopf.knopf-haupt, a.knopf.haupt { color: var(--akzent-text); }
+
+/* Hinweise in einer Karte haben die Innenabstände der Karte schon */
+.karte .hinweis { padding-inline: 0; }
+
+/* Zweite Runde des Rings: halbe Deckkraft */
+.ring-zweit { opacity: .5; }
+
+/* Runder Glasknopf für Blättern */
+.knopf-rund { width: 44px; height: 44px; padding: 0; }
+
+/* Wochenliste: Balken wie die Zeitleiste, aber flach und ohne Außenabstand */
+.wochen-balken { display: block; flex: 1 1 auto; min-width: 0; height: 24px; margin-top: 0; }
+.liste-text-fest { flex: 0 0 auto; }
+.zahl-block { display: block; }
+
+/* Monat: Summen, klickbare Tageszeilen, Tabellenüberschrift */
+.monatssumme { font-weight: 700; }
+tr.tag-zeile { cursor: pointer; }
+tr.tag-zeile:hover { background: var(--segment); }
+tr.tag-zeile:focus-visible { outline: 2px solid var(--akzent); outline-offset: -2px; }
+.tabelle-ueberschrift { caption-side: top; text-align: left; padding-bottom: 8px; }
+
+/* Fehler und Hinweise */
+.feld-fehler, .fehler { color: var(--gefahr); }
+.gesichert {
+  font-size: .75rem; color: var(--text-2); transition: opacity 200ms ease;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gesichert:not([hidden]) { animation: gesichert-ein 200ms ease; }
+}
+@keyframes gesichert-ein {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Schalter im iOS-Stil (role="switch") */
+input[type="checkbox"][role="switch"] {
+  -webkit-appearance: none; appearance: none; position: relative; flex: none; display: inline-block;
+  width: 51px; height: 31px; margin: 0; border-radius: 999px; background: var(--segment); cursor: pointer;
+  transition: background 200ms ease;
+}
+input[type="checkbox"][role="switch"]::before {
+  content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%;
+  background: #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, .25), 0 1px 1px rgba(0, 0, 0, .12);
+  transition: transform 300ms var(--feder);
+}
+input[type="checkbox"][role="switch"]:checked { background: var(--schalter-an); }
+input[type="checkbox"][role="switch"]:checked::before { transform: translateX(20px); }
+input[type="checkbox"][role="switch"]:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+input[type="checkbox"][role="switch"]:disabled { opacity: .4; cursor: default; }
+@media (prefers-reduced-motion: reduce) {
+  input[type="checkbox"][role="switch"], input[type="checkbox"][role="switch"]::before { transition: none; }
+}
+
+/* Formulare und Gruppen */
+.feld-start { align-items: flex-start; }
+.formular-stapel { display: flex; flex-direction: column; gap: 18px; }
+.stapel-klein { display: flex; flex-direction: column; gap: 14px; }
+.gruppe { display: flex; flex-direction: column; gap: 8px; }
+.gruppe-fuss { padding: 0 20px; font-size: .875rem; color: var(--text-2); }
+
+/* Einstellungen: rechte Spalte einer Zeile, Eingabe rechtsbündig */
+.einstellung-wert { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; margin-left: auto; min-width: 0; }
+.einstellung-reihe { display: flex; align-items: center; gap: 10px; max-width: 100%; }
+.einstellung-wert > .fehler { text-align: right; }
+input.einstellung-eingabe { width: 11rem; max-width: 100%; text-align: right; }
+.liste-zentriert { justify-content: center; }
+.datei-eingabe { max-width: 60%; }
+
+/* Druck: Name unter dem Druckkopf, wenn er eingetragen ist */
+@media print {
+  #ansicht[data-name]::before { content: "Stundenzettel " attr(data-monat) ", " attr(data-name); }
+}
+
+/* Tag bearbeiten (tag_sheet.js): Kennzahlen, Blöcke, Pause, Fußleiste.
+   Breite ab 600 px: eine Zeile je Block. Darunter: Block-Nummer und Löschen oben, Zeiten darunter. */
+.tag-form { gap: 16px; }
+
+/* Kennzahlen: drei Werte nebeneinander, Trennlinie zwischen den Spalten */
+.tag-kennzahlen { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0; overflow: hidden; }
+.tag-kennzahl { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 14px 16px; }
+.tag-kennzahl + .tag-kennzahl { border-left: 1px solid var(--linie); }
+.tag-kennzahl-name { font-size: .8125rem; font-weight: 600; color: var(--text-2); }
+.tag-kennzahl-wert {
+  font-size: clamp(1.25rem, 5.5vw, 1.75rem); font-weight: 700; letter-spacing: -.02em; line-height: 1.2;
+  white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+
+/* Blöcke: Liste mit Trennlinien, je Zeile ein Block */
+.tag-liste { display: flex; flex-direction: column; }
+.tag-leer { padding: 16px 20px; }
+.tag-block {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas:
+    "nr dauer loeschen"
+    "zeit zeit zeit"
+    "fehler fehler fehler";
+  align-items: center; gap: 10px 12px; padding: 12px 16px; border-top: 1px solid var(--linie);
+}
+.tag-block:first-child { border-top: 0; }
+.tag-nr { grid-area: nr; font-size: .8125rem; font-weight: 600; color: var(--text-2); }
+.tag-dauer {
+  grid-area: dauer; font-size: .9375rem; color: var(--text-2); text-align: right; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.tag-zeit { grid-area: zeit; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tag-zeit .feld { flex: 1 1 0; min-width: 7.5rem; }
+.tag-zeit input[type="time"] { min-width: 7.5rem; font-variant-numeric: tabular-nums; }
+.tag-bis { flex: none; font-size: .9375rem; color: var(--text-2); }
+.tag-loeschen { grid-area: loeschen; width: 44px; padding: 0; border-radius: 50%; color: var(--gefahr); }
+.tag-loeschen svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.tag-fehler { grid-area: fehler; }
+.tag-hinzu {
+  align-self: flex-start; min-height: 44px; padding: 0 4px; border: 0; border-radius: 8px; background: transparent;
+  font: inherit; font-size: 1rem; font-weight: 600; color: var(--akzent-schrift); cursor: pointer;
+}
+.tag-hinzu:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.tag-hinweis { padding: 0 4px; margin-top: -6px; }
+
+/* Ab 600 px: Block, Zeiten, Dauer und Löschen in einer Zeile */
+@media (min-width: 600px) {
+  .tag-block {
+    grid-template-columns: 4.5rem minmax(0, 1fr) 5.5rem 44px;
+    grid-template-areas:
+      "nr zeit dauer loeschen"
+      ". fehler fehler fehler";
+  }
+  .tag-dauer { text-align: right; }
+}
+
+/* Pause: Gruppe mit Schalter und Feld */
+.tag-gruppen-titel { padding: 0 20px; }
+.tag-pause-zeile { flex-wrap: wrap; }
+input.tag-pause-eingabe { width: 12rem; max-width: 100%; margin-left: auto; text-align: right; }
+.tag-pause-erkennung {
+  font-size: .875rem; color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums;
+}
+.tag-pause-erkennung.fehler { color: var(--gefahr); }
+.tag-pause .tag-fehler { padding: 0 20px; }
+
+/* Fußleiste: unten im Sheet, bleibt beim Scrollen stehen */
+.tag-fuss {
+  position: sticky; bottom: calc(-20px - env(safe-area-inset-bottom)); z-index: 2; display: flex; flex-direction: column; gap: 10px;
+  margin: 4px -20px calc(-20px - env(safe-area-inset-bottom)); padding: 12px 20px calc(16px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--linie); background: var(--glas-stark);
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+}
+.tag-fuss-fehler { text-align: right; }
+.tag-fuss-knoepfe { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
+
+/* Dienstreise (reise_sheet.js): Sheet „Dienstreise eintragen“ */
+.reise-zeiten { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.reise-zeiten input[type="time"] { min-width: 0; }
+.reise-schalter {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px;
+}
+.reise-schalter .liste-titel { font-size: 1rem; font-weight: 600; min-width: 0; }
+.reise-vorschau { margin-top: 2px; }
+.reise-vorschau-leer { padding: 16px 20px; }
+.reise-summe-zeile .liste-titel, .reise-summe-zeile .liste-wert { font-weight: 700; }
+.reise-fuss {
+  position: sticky; bottom: calc(-20px - env(safe-area-inset-bottom)); z-index: 2; display: flex; flex-direction: column; gap: 10px;
+  margin: 4px -20px calc(-20px - env(safe-area-inset-bottom)); padding: 12px 20px calc(16px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--linie); background: var(--glas-stark);
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+}
+.reise-fuss-fehler { text-align: right; }
+.reise-fuss-knoepfe { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
+
+/* Dienstreise im Tag-Fenster: aufklappbare Einträge in einer Liste */
+.reise-liste { display: flex; flex-direction: column; }
+.reise-markieren { align-self: flex-start; }
+.reise-eintrag { border-top: 1px solid var(--linie); }
+.reise-eintrag:first-child { border-top: 0; }
+.reise-kopf {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 52px;
+  padding: 10px 20px; cursor: pointer; list-style: none; color: var(--text);
+}
+.reise-kopf::-webkit-details-marker { display: none; }
+.reise-kopf:hover { background: var(--segment); }
+.reise-kopf:focus-visible { outline: 2px solid var(--akzent); outline-offset: -2px; }
+.reise-kopf::after {
+  content: ""; flex: none; width: 8px; height: 8px; margin-right: 4px;
+  border-right: 2px solid var(--text-2); border-bottom: 2px solid var(--text-2);
+  transform: rotate(45deg); transition: transform 200ms var(--feder);
+}
+.reise-eintrag[open] > .reise-kopf::after { transform: rotate(-135deg); }
+.reise-kopf .liste-wert { color: var(--text); font-weight: 600; }
+.reise-felder { display: flex; flex-direction: column; gap: 14px; padding: 4px 20px 18px; }
+.reise-schalter-gruppe { display: flex; flex-direction: column; gap: 4px; }
+.reise-betraege { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.reise-betraege input[type="text"] { text-align: right; }
+.reise-eintrag-fuss { display: flex; justify-content: flex-end; }
+.reise-outlook { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; }
+.reise-outlook .eyebrow { padding: 0 4px; }
+.reise-outlook .knopf.klein { min-height: 40px; }
+
+/* Reisekosten im Monat (ansicht_monat.js): Kennzahlen, Liste der Reisetage */
+.reise-kennzahlen {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; margin: 0 0 16px;
+}
+.reise-kennzahlen > div { min-width: 0; }
+.reise-kennzahlen dt { font-size: .8125rem; font-weight: 600; color: var(--text-2); }
+.reise-kennzahlen dd {
+  margin: 2px 0 0; font-size: 1.25rem; font-weight: 700; letter-spacing: -.01em; line-height: 1.2;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+@media (min-width: 600px) {
+  .reise-kennzahlen { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.reise-tage { display: flex; flex-direction: column; }
+.reise-tag { text-align: left; }
+.reise-hinweis { color: var(--warnung); font-weight: 600; }
+.reise-status { margin-top: 10px; }

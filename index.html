@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#eef2f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a0c11" media="(prefers-color-scheme: dark)">
+<title>Zeiterfassung</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="symbol-192.png">
+<link rel="stylesheet" href="stil.css">
+<link rel="stylesheet" href="vorschlaege.css">
+</head>
+<body>
+<div class="rahmen">
+
+  <nav class="navi glas" aria-label="Hauptnavigation">
+    <div class="marke">Zeiterfassung</div>
+    <ul>
+      <li><a class="reiter" href="#heute" data-ziel="heute">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+        <span>Heute</span></a></li>
+      <li><a class="reiter" href="#woche" data-ziel="woche">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M4 10h16M9 3v4M15 3v4"/></svg>
+        <span>Woche</span></a></li>
+      <li><a class="reiter" href="#monat" data-ziel="monat">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"/></svg>
+        <span>Monat</span></a></li>
+      <li><a class="reiter" href="#abwesenheiten" data-ziel="abwesenheiten">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>
+        <span>Abwesenheiten</span></a></li>
+      <li><a class="reiter" href="#einstellungen" data-ziel="einstellungen">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
+        <span>Einstellungen</span></a></li>
+    </ul>
+  </nav>
+
+  <main id="ansicht" class="inhalt" tabindex="-1"></main>
+
+</div>
+
+<div id="sheet-hintergrund" class="sheet-hintergrund" hidden></div>
+<div id="sheet" class="sheet" role="dialog" aria-modal="true" hidden></div>
+
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
