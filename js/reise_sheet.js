@@ -2,12 +2,15 @@
 // Dazu gemeinsame Helfer für tag_sheet.js und ansicht_monat.js: Euro, Länderliste, Betragsprüfung, Feldfehler.
 import { alle, loeschen, speichern } from './speicher.js';
 import { LAENDER } from './laender.js';
-import { reiseTageErzeugen, verpflegung } from './reisen.js';
-import { minutenAusUhrzeit, uhrzeit, wochentag } from './zeit.js';
+import { hotelNaechteAus, reiseTageErzeugen, verpflegung } from './reisen.js';
+import { addTage, minutenAusUhrzeit, uhrzeit, wochentag } from './zeit.js';
 
 const KURZ = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
+const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli',
+                'August', 'September', 'Oktober', 'November', 'Dezember'];
 const EURO = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const BETRAG = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false });
+const TAG = 1440; // 24:00
 
 // Betrag mit zwei Nachkommastellen und Komma: „26,40 €“
 export function euro(betrag) {
@@ -106,12 +109,74 @@ export function reiseSchalter(id, text, an = false) {
   return { box, input };
 }
 
-// Eingabe-Vorgabe für Zeitfelder: 1440 (24:00) bleibt leer, sonst HH:MM
-function zeitWert(min) {
-  if (min === 1440) return '';
+// Zeit als HH:MM für Zeitfelder, 24:00 als 24:00
+function zeitFeldWert(min) {
   const h = String(Math.floor(min / 60)).padStart(2, '0');
   const m = String(min % 60).padStart(2, '0');
   return `${h}:${m}`;
+}
+
+// Eingabe-Vorgabe für die Zeitfelder oben: 1440 (24:00) bleibt leer, sonst HH:MM
+function zeitWert(min) {
+  return min === TAG ? '' : zeitFeldWert(min);
+}
+
+// Häufigster Wert einer Liste, bei Gleichstand der zuerst vorkommende. Leere Liste: null.
+function haeufigste(werte) {
+  const zaehl = new Map();
+  for (const w of werte) zaehl.set(w, (zaehl.get(w) ?? 0) + 1);
+  let bester = null;
+  let anzahl = 0;
+  for (const [w, n] of zaehl) {
+    if (n > anzahl) {
+      bester = w;
+      anzahl = n;
+    }
+  }
+  return bester;
+}
+
+// Abende im Zeitraum (alle Tage außer dem letzten), JJJJ-MM-TT
+function abendeZeitraum(von, bis) {
+  const liste = [];
+  if (!von || !bis) return liste;
+  for (let d = von; d < bis; d = addTage(d, 1)) liste.push(d);
+  return liste;
+}
+
+// Etikett des Nachtschalters: „Nacht vom 25. auf den 26. Oktober im Hotel“
+function nachtEtikett(datum) {
+  const folge = addTage(datum, 1);
+  const [, m1, t1] = datum.split('-').map(Number);
+  const [, m2, t2] = folge.split('-').map(Number);
+  const teil1 = m1 === m2 ? `${t1}.` : `${t1}. ${MONATE[m1 - 1]}`;
+  return `Nacht vom ${teil1} auf den ${t2}. ${MONATE[m2 - 1]} im Hotel`;
+}
+
+// Bett als Inline-SVG, Symbol für die Nacht im Hotel
+function bettSymbol() {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.setAttribute('focusable', 'false');
+  svg.setAttribute('class', 'reise-nacht-symbol');
+  svg.setAttribute('fill', 'none');
+  svg.setAttribute('stroke', 'currentColor');
+  svg.setAttribute('stroke-width', '1.8');
+  svg.setAttribute('stroke-linecap', 'round');
+  svg.setAttribute('stroke-linejoin', 'round');
+  for (const d of ['M3 5v14', 'M3 13h18v6', 'M3 17h18']) {
+    const pfad = document.createElementNS(ns, 'path');
+    pfad.setAttribute('d', d);
+    svg.append(pfad);
+  }
+  const kissen = document.createElementNS(ns, 'circle');
+  kissen.setAttribute('cx', '7.5');
+  kissen.setAttribute('cy', '10');
+  kissen.setAttribute('r', '2');
+  svg.append(kissen);
+  return svg;
 }
 
 // Gestellte Mahlzeiten: Schlüssel am Reisetag, Schalterbeschriftung und Wort für die zugeklappte Zeile
@@ -123,11 +188,13 @@ const MAHLZEITEN = [
 
 // Zusätzliche Beträge je Reisetag (Euro), in der aufgeklappten Tageszeile
 const BETRAEGE = [
-  { schluessel: 'uebernachtung', name: 'Übernachtung (Euro)' },
   { schluessel: 'fahrt', name: 'Fahrt (Euro)' },
   { schluessel: 'neben', name: 'Nebenkosten (Euro)' },
 ];
 const BETRAG_FEHLER = 'Bitte einen Betrag in Euro angeben, zum Beispiel 12,50.';
+const ZEIT_FEHLER = 'Bitte eine Uhrzeit angeben.';
+const RUECKKEHR_FEHLER = 'Die Rückkehr liegt nicht nach der Abfahrt.';
+const PRUEFEN_HINWEIS = 'Bitte die Beträge und Zeiten in der Vorschau prüfen.';
 
 // Betrag für ein Feld: leer bei 0, sonst mit Komma ohne Tausenderpunkt
 function betragText(n) {
@@ -158,8 +225,10 @@ function summeVon(tage) {
 }
 
 // Tage der Reise aus den Feldern des Sheets (Vorschau und Sichern). Leer, solange Angaben fehlen.
-// abweichungen: { 'JJJJ-MM-TT': { abend: true, ... } } überschreibt die Mahlzeiten des Tages.
-function tageAusFeldern(f, abweichungen = {}) {
+// abweichungen: { 'JJJJ-MM-TT': { abend: true, beginn: 420, ... } } überschreibt Felder des Tages.
+// Abfahrt nur an Tagen, die nicht um 0:00 beginnen; Rückkehr nur an Tagen, die nicht um 24:00 enden.
+// hotelNaechte: Abende im Hotel. uebernachtung: alte Übernachtungsbeträge je Datum (bleiben erhalten).
+function tageAusFeldern(f, abweichungen = {}, hotelNaechte = [], uebernachtung = {}) {
   const von = f.von.input.value;
   const bis = f.bis.input.value;
   const beginn = minutenAusUhrzeit(f.abfahrt.input.value);
@@ -175,8 +244,17 @@ function tageAusFeldern(f, abweichungen = {}) {
     anlass: f.anlass.input.value.trim(),
     zusatz: f.zusatz.input.value.trim(),
     hotelFruehstueck: von !== bis && f.fruehstueck.input.checked,
+    hotelNaechte,
   });
-  return tage.map((t) => ({ ...t, ...abweichungen[t.datum] }));
+  return tage.map((t) => {
+    const o = { ...t, uebernachtung: uebernachtung[t.datum] ?? 0 };
+    for (const [schluessel, wert] of Object.entries(abweichungen[t.datum] ?? {})) {
+      if (schluessel === 'beginn' && t.beginn === 0) continue;
+      if (schluessel === 'ende' && t.ende === TAG) continue;
+      o[schluessel] = wert;
+    }
+    return o;
+  });
 }
 
 // Sheet „Dienstreise eintragen“ oder „Dienstreise bearbeiten“.
@@ -190,21 +268,29 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     : null;
   const erste = bearbeitet?.[0];
   const letzte = bearbeitet?.[bearbeitet.length - 1];
+  // Abende im Hotel, wie sie gespeichert sind
+  const nachtDaten = bearbeitet ? hotelNaechteAus(bearbeitet) : [];
+  // Beim Bearbeiten: häufigste Abfahrt und Rückkehr als Vorgabe, der Rest wird als Abweichung gemerkt
   const quelle = bearbeitet
     ? {
       von: erste.datum,
       bis: letzte.datum,
-      beginn: erste.beginn,
-      ende: letzte.ende,
+      beginn: haeufigste(bearbeitet.filter((t) => t.beginn !== 0).map((t) => t.beginn)) ?? 480,
+      ende: haeufigste(bearbeitet.filter((t) => t.ende !== TAG).map((t) => t.ende)) ?? 960,
       land: erste.land,
       anlass: erste.anlass,
       zusatz: erste.zusatz ?? '',
     }
     : vorgabe;
-  // „Frühstück im Hotel“ gilt, wenn alle Tage außer dem ersten Frühstück haben
-  const hotel = Boolean(bearbeitet && bearbeitet.length > 1 && bearbeitet.slice(1).every((t) => t.fruehstueck));
+  // „Frühstück im Hotel“ gilt, wenn alle Tage nach einer Hotelnacht Frühstück haben (Vorgabe: an)
+  const nachHotelnacht = bearbeitet
+    ? bearbeitet.filter((t) => nachtDaten.includes(addTage(t.datum, -1)))
+    : [];
+  const hotel = nachHotelnacht.length === 0 || nachHotelnacht.every((t) => t.fruehstueck);
   const bestehendeId = bearbeitet?.find((t) => t.reiseId)?.reiseId ?? null;
   const alteIds = new Set((bearbeitet ?? []).map((t) => t.id));
+  // Übernachtungsbeträge der bisherigen Tage bleiben beim Sichern erhalten (das Feld entfällt im Sheet)
+  const uebernachtungAlt = Object.fromEntries((bearbeitet ?? []).map((t) => [t.datum, t.uebernachtung ?? 0]));
   // Belegte Tage ohne die Tage der Reise, die gerade bearbeitet wird
   const vorhanden = (await alle('reisen')).filter((r) => !r.geloescht && !alteIds.has(r.id));
 
@@ -217,8 +303,9 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     land: reiseFeld('reise-land', 'Land', 'text', landAnzeige(quelle.land ?? 'Deutschland')),
     von: reiseFeld('reise-von', 'Von', 'date', quelle.von ?? heuteText),
     bis: reiseFeld('reise-bis', 'Bis', 'date', quelle.bis ?? quelle.von ?? heuteText),
-    abfahrt: reiseFeld('reise-abfahrt', 'Abfahrt (erster Tag)', 'time', zeitWert(quelle.beginn ?? 480)),
-    rueck: reiseFeld('reise-rueck', 'Rückkehr (letzter Tag)', 'time', zeitWert(quelle.ende ?? 960)),
+    abfahrt: reiseFeld('reise-abfahrt', 'Abfahrt', 'time', zeitWert(quelle.beginn ?? 480)),
+    rueck: reiseFeld('reise-rueck', 'Rückkehr', 'time', zeitWert(quelle.ende ?? 960)),
+    uebernachtung: reiseSchalter('reise-uebernachtung', 'Übernachtung im Hotel', true),
     fruehstueck: reiseSchalter('reise-fruehstueck', 'Frühstück im Hotel', hotel),
     zusatz: reiseFeld('reise-zusatz', 'Zusatz', 'text', quelle.zusatz ?? ''),
   };
@@ -230,6 +317,18 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
   f.zusatz.input.placeholder = 'z. B. Hotel von Kunde bezahlt';
   f.zusatz.input.autocomplete = 'off';
   f.anlass.input.autocomplete = 'off';
+
+  // Abfahrt und Rückkehr oben, mit Hinweis darunter
+  const zeitenHinweis = document.createElement('p');
+  zeitenHinweis.className = 'notiz reise-zeiten-hinweis';
+  zeitenHinweis.id = 'reise-zeiten-hinweis';
+  zeitenHinweis.textContent = 'Gilt für jeden Tag, an dem du morgens losfährst bzw. abends heimkommst.';
+  for (const feld of [f.abfahrt, f.rueck]) {
+    feld.input.setAttribute('aria-describedby', `${zeitenHinweis.id} ${feld.fehler.id}`);
+  }
+  const zeiten = document.createElement('div');
+  zeiten.className = 'reise-zeiten';
+  zeiten.append(f.abfahrt.box, f.rueck.box);
 
   const vorschauTitel = document.createElement('p');
   vorschauTitel.className = 'eyebrow';
@@ -282,9 +381,10 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     laenderDatalist,
     f.von.box,
     f.bis.box,
-    f.abfahrt.box,
-    f.rueck.box,
+    f.uebernachtung.box,
     f.fruehstueck.box,
+    zeiten,
+    zeitenHinweis,
     f.zusatz.box,
     vorschauTitel,
     vorschauListe,
@@ -293,7 +393,7 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
 
   let beschaeftigt = false;
 
-  // Abweichungen je Reisetag (nur Mahlzeiten, die vom Standard abweichen) und offene Zeilen der Vorschau
+  // Abweichungen je Reisetag (Mahlzeiten, Beträge, Zeiten, die vom Standard abweichen) und offene Zeilen
   const abweichungen = {};
   const offen = new Set();
   // Schalter, der nach dem Neuzeichnen wieder den Fokus bekommt
@@ -301,12 +401,25 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
   // Wertfelder der Tageszeilen (datum -> Element) und Summenfeld, für Änderungen ohne Neuaufbau
   const wertElemente = new Map();
   let summeWert = null;
-  // Ungültig eingetippte Beträge, je „datum|feld“: bleiben stehen und blockieren das Sichern
+  // Ungültig eingetippte Beträge und Uhrzeiten, je „datum|feld“: bleiben stehen und blockieren das Sichern
   const roh = new Map();
+  // Abende, an denen man NICHT im Hotel bleibt (Datumstexte). Alle übrigen Abende im Zeitraum sind im Hotel.
+  const aus = new Set();
+
+  // Abende im Hotel im aktuellen Zeitraum
+  const nachtListe = () => abendeZeitraum(f.von.input.value, f.bis.input.value).filter((d) => !aus.has(d));
+  const nachtAlleAn = () => abendeZeitraum(f.von.input.value, f.bis.input.value).every((d) => !aus.has(d));
+  // Tage der Reise mit Abweichungen; ohne Abweichungen (mit {}) der Standard
+  const tageJetzt = (mit = abweichungen) => tageAusFeldern(f, mit, nachtListe(), uebernachtungAlt);
+
+  if (bearbeitet) {
+    for (const d of abendeZeitraum(quelle.von, quelle.bis)) if (!nachtDaten.includes(d)) aus.add(d);
+  }
+  f.uebernachtung.input.checked = nachtAlleAn();
 
   // Beim Bearbeiten: Abweichungen von der Vorgabe aus den gespeicherten Tagen übernehmen
   if (bearbeitet) {
-    const standard = tageAusFeldern(f);
+    const standard = tageJetzt({});
     for (const t of bearbeitet) {
       const std = standard.find((s) => s.datum === t.datum) ?? {};
       const eintrag = {};
@@ -316,6 +429,8 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
       for (const b of BETRAEGE) {
         if ((t[b.schluessel] ?? 0) !== (std[b.schluessel] ?? 0)) eintrag[b.schluessel] = t[b.schluessel] ?? 0;
       }
+      if (t.beginn !== 0 && t.beginn !== std.beginn) eintrag.beginn = t.beginn;
+      if (t.ende !== TAG && t.ende !== std.ende) eintrag.ende = t.ende;
       if (Object.keys(eintrag).length) abweichungen[t.datum] = eintrag;
     }
   }
@@ -330,7 +445,7 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     } else {
       roh.delete(merk);
       feldFehler(feld, '');
-      const standard = tageAusFeldern(f).find((t) => t.datum === datum);
+      const standard = tageJetzt({}).find((t) => t.datum === datum);
       const eintrag = { ...abweichungen[datum] };
       if (betrag === (standard?.[schluessel] ?? 0)) delete eintrag[schluessel];
       else eintrag[schluessel] = betrag;
@@ -341,19 +456,39 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     vorschauWerteAktualisieren();
   }
 
+  // Abfahrt oder Rückkehr eines Tages geändert. Entspricht der Wert der Vorgabe, gibt es keine Abweichung.
+  function zeitGeaendert(datum, schluessel, feld) {
+    const merk = `${datum}|${schluessel}`;
+    const min = minutenAusUhrzeit(feld.input.value);
+    if (min === null) {
+      roh.set(merk, feld.input.value);
+    } else {
+      roh.delete(merk);
+      const standard = tageJetzt({}).find((t) => t.datum === datum);
+      const eintrag = { ...abweichungen[datum] };
+      if (min === standard?.[schluessel]) delete eintrag[schluessel];
+      else eintrag[schluessel] = min;
+      if (Object.keys(eintrag).length) abweichungen[datum] = eintrag;
+      else delete abweichungen[datum];
+    }
+    fokusId = feld.input.id;
+    vorschauZeichnen();
+  }
+
   // Tageswerte und Summe in der Vorschau aktualisieren, ohne die Zeilen neu aufzubauen (der Fokus bleibt)
   function vorschauWerteAktualisieren() {
-    const tage = tageAusFeldern(f, abweichungen);
+    const tage = tageJetzt();
     for (const t of tage) {
       const wert = wertElemente.get(t.datum);
       if (wert) wert.textContent = tagWert(t);
     }
     if (summeWert) summeWert.textContent = euro(summeVon(tage));
+    sperrenAktualisieren();
   }
 
   // Eine Mahlzeit eines Tages umschalten. Entspricht der Wert dem Standard, wird die Abweichung gelöscht.
   function mahlzeitGeaendert(datum, schluessel, input) {
-    const standard = tageAusFeldern(f).find((t) => t.datum === datum);
+    const standard = tageJetzt({}).find((t) => t.datum === datum);
     if (!standard) return;
     const eintrag = { ...abweichungen[datum] };
     if (input.checked === standard[schluessel]) delete eintrag[schluessel];
@@ -364,11 +499,67 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     vorschauZeichnen();
   }
 
-  // Vorschau und Schalter „Frühstück im Hotel“ (nur bei mehreren Tagen) an die Eingaben anpassen
+  // Eine Hotelnacht ein- oder ausschalten: nur dieser Abend ändert sich, die Vorschau wird neu gezeichnet
+  function nachtGeaendert(datum, input) {
+    if (input.checked) aus.delete(datum);
+    else aus.add(datum);
+    f.uebernachtung.input.checked = nachtAlleAn();
+    fokusId = input.id;
+    vorschauZeichnen();
+  }
+
+  // Gesperrt, solange ein Betrag oder eine Uhrzeit ungültig ist oder eine Rückkehr nicht nach der Abfahrt liegt
+  function gesperrt() {
+    return roh.size > 0 || tageJetzt().some((t) => t.ende <= t.beginn);
+  }
+
+  // Sichern-Schalter und Hinweis an den Zustand der Vorschau anpassen
+  function sperrenAktualisieren() {
+    const sperre = gesperrt();
+    sichernKnopf.disabled = beschaeftigt || sperre;
+    if (sperre) {
+      gesamtFehler.textContent = PRUEFEN_HINWEIS;
+      gesamtFehler.hidden = false;
+    } else if (gesamtFehler.textContent === PRUEFEN_HINWEIS) {
+      gesamtFehler.textContent = '';
+      gesamtFehler.hidden = true;
+    }
+  }
+
+  // Zeitfeld eines Tages; ungültige Eingaben bleiben stehen (roh)
+  function zeitFeldFuer(t, schluessel, name, id, wert) {
+    const merk = `${t.datum}|${schluessel}`;
+    const feld = reiseFeld(`${id}-${schluessel}`, name, 'time', roh.has(merk) ? roh.get(merk) : zeitFeldWert(wert));
+    feld.input.addEventListener('change', () => zeitGeaendert(t.datum, schluessel, feld));
+    if (roh.has(merk)) feldFehler(feld, ZEIT_FEHLER);
+    return feld;
+  }
+
+  // Schalter „Nacht im Hotel“ zwischen zwei Tagen der Vorschau
+  function nachtZeile(datum, an) {
+    const zeile = document.createElement('div');
+    zeile.className = 'reise-nacht';
+    const text = document.createElement('span');
+    text.className = 'reise-nacht-text';
+    text.textContent = 'Nacht im Hotel';
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.setAttribute('role', 'switch');
+    input.id = `reise-nacht-${datum}`;
+    input.name = input.id;
+    input.checked = an;
+    input.setAttribute('aria-label', nachtEtikett(datum));
+    input.addEventListener('change', () => nachtGeaendert(datum, input));
+    zeile.append(bettSymbol(), text, input);
+    return zeile;
+  }
+
+  // Vorschau und Schalter „Übernachtung“ und „Frühstück im Hotel“ (nur bei mehreren Tagen) an die Eingaben anpassen
   function vorschauZeichnen() {
     const einzeln = f.von.input.value === f.bis.input.value;
+    f.uebernachtung.box.hidden = einzeln;
     f.fruehstueck.box.hidden = einzeln;
-    const tage = tageAusFeldern(f, abweichungen);
+    const tage = tageJetzt();
     vorschauListe.replaceChildren();
     wertElemente.clear();
     if (tage.length === 0) {
@@ -377,10 +568,16 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
       leer.className = 'notiz reise-vorschau-leer';
       leer.textContent = 'Von, Bis, Abfahrt und Rückkehr angeben, dann erscheinen die Tage hier.';
       vorschauListe.append(leer);
+      sperrenAktualisieren();
       return;
     }
-    for (const t of tage) {
+    tage.forEach((t, i) => {
       const id = `reise-tag-${t.datum}`;
+      // Rückkehr nicht nach der Abfahrt: Fehler an der Zeile, die Zeile klappt auf
+      const zeitFehler = t.ende <= t.beginn;
+      const hatRoh = [...roh.keys()].some((k) => k.startsWith(`${t.datum}|`));
+      if (zeitFehler || hatRoh) offen.add(t.datum);
+
       const zeile = document.createElement('button');
       zeile.type = 'button';
       zeile.id = `${id}-knopf`;
@@ -423,7 +620,7 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
         felder.append(schalter.box);
       }
       const betragBox = document.createElement('div');
-      betragBox.className = 'reise-betraege';
+      betragBox.className = 'reise-betraege zwei';
       for (const b of BETRAEGE) {
         const merk = `${t.datum}|${b.schluessel}`;
         const feld = reiseFeld(`${id}-${b.schluessel}`, b.name, 'text',
@@ -437,6 +634,19 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
       }
       felder.append(betragBox);
 
+      // Abfahrt und Rückkehr nur an Tagen, die nicht um 0:00 beginnen bzw. nicht um 24:00 enden
+      if (t.beginn !== 0 || t.ende !== TAG) {
+        const zeitBox = document.createElement('div');
+        zeitBox.className = 'reise-zeiten';
+        if (t.beginn !== 0) zeitBox.append(zeitFeldFuer(t, 'beginn', 'Abfahrt', id, t.beginn).box);
+        if (t.ende !== TAG) {
+          const rueck = zeitFeldFuer(t, 'ende', 'Rückkehr', id, t.ende);
+          if (zeitFehler && !roh.has(`${t.datum}|ende`)) feldFehler(rueck, RUECKKEHR_FEHLER);
+          zeitBox.append(rueck.box);
+        }
+        felder.append(zeitBox);
+      }
+
       zeile.addEventListener('click', () => {
         const auf = !offen.has(t.datum);
         if (auf) offen.add(t.datum);
@@ -446,7 +656,8 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
       });
 
       vorschauListe.append(zeile, felder);
-    }
+      if (i < tage.length - 1) vorschauListe.append(nachtZeile(t.datum, !aus.has(t.datum)));
+    });
     const summeZeile = document.createElement('div');
     summeZeile.className = 'liste-zeile reise-summe-zeile';
     const summeText = document.createElement('span');
@@ -457,6 +668,7 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     summeWert.textContent = euro(summeVon(tage));
     summeZeile.append(summeText, summeWert);
     vorschauListe.append(summeZeile);
+    sperrenAktualisieren();
     if (fokusId) {
       document.getElementById(fokusId)?.focus();
       fokusId = null;
@@ -469,6 +681,15 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     if (von && f.bis.input.value < von) f.bis.input.value = von;
   });
 
+  // „Übernachtung im Hotel“ setzt alle Abende im Zeitraum (die Vorschau zeichnet das Formular danach neu)
+  f.uebernachtung.input.addEventListener('change', () => {
+    const an = f.uebernachtung.input.checked;
+    for (const d of abendeZeitraum(f.von.input.value, f.bis.input.value)) {
+      if (an) aus.delete(d);
+      else aus.add(d);
+    }
+  });
+
   // „Frühstück im Hotel“ ändert das Frühstück aller Tage: Frühstück-Abweichungen verwerfen, Mittag und Abend behalten
   f.fruehstueck.input.addEventListener('change', () => {
     for (const datum of Object.keys(abweichungen)) {
@@ -477,11 +698,18 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
     }
   });
 
-  // Änderungen in der Vorschau übernehmen die Schalter selbst (mahlzeitGeaendert).
+  // Änderungen in der Vorschau übernehmen die Schalter selbst (mahlzeitGeaendert, nachtGeaendert, …).
   // Der Ereignispfad gilt schon beim Auslösen; nach dem Neuzeichnen ist das Ziel nicht mehr im Dokument.
+  // Der Schalter „Übernachtung im Hotel“ selbst bleibt beim Ereignis unverändert, sonst setzt das Neuzeichnen
+  // ihn zurück, bevor sein change-Ereignis die Nächte ändert.
   const inVorschau = (e) => e.composedPath().includes(vorschauListe);
-  form.addEventListener('input', (e) => { if (!inVorschau(e)) vorschauZeichnen(); });
-  form.addEventListener('change', (e) => { if (!inVorschau(e)) vorschauZeichnen(); });
+  const neuZeichnen = (e) => {
+    if (inVorschau(e)) return;
+    if (e.target !== f.uebernachtung.input) f.uebernachtung.input.checked = nachtAlleAn();
+    vorschauZeichnen();
+  };
+  form.addEventListener('input', neuZeichnen);
+  form.addEventListener('change', neuZeichnen);
 
   // Prüfen und speichern
   async function absenden() {
@@ -519,12 +747,19 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
       return;
     }
     if (roh.size > 0) {
-      gesamtFehler.textContent = 'Bitte die Beträge in der Vorschau prüfen.';
+      gesamtFehler.textContent = PRUEFEN_HINWEIS;
       gesamtFehler.hidden = false;
       return;
     }
 
-    const tage = tageAusFeldern(f, abweichungen);
+    const tage = tageJetzt();
+    const zeitFehlerTag = tage.find((t) => t.ende <= t.beginn);
+    if (zeitFehlerTag) {
+      gesamtFehler.textContent = `Am ${langesDatumDe(zeitFehlerTag.datum)} liegt die Rückkehr nicht nach der Abfahrt. Bitte die Zeiten in der Vorschau prüfen.`;
+      gesamtFehler.hidden = false;
+      vorschauZeichnen();
+      return;
+    }
     const belegt = new Set(vorhanden.map((r) => r.datum));
     const doppelt = tage.find((t) => belegt.has(t.datum));
     if (doppelt) {
@@ -548,7 +783,7 @@ export async function reiseOeffnen(vorgabe = {}, kontext) {
       gesamtFehler.hidden = false;
     } finally {
       beschaeftigt = false;
-      sichernKnopf.disabled = false;
+      sichernKnopf.disabled = gesperrt();
     }
   }
 

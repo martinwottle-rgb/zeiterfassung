@@ -37,24 +37,31 @@ function tagPlus(datum, n) {
 }
 
 // Reisetage ohne id aus einer mehrtägigen oder eintägigen Reise.
-// Mehrere Tage: erster Tag beginn bis 24:00 (Anreise), mittlere 0 bis 24:00, letzter 0 bis ende (Rückreise).
-// Frühstück im Hotel gilt an allen Tagen außer dem ersten.
-export function reiseTageErzeugen({ von, bis, beginn, ende, land: lname, anlass = '', zusatz = '', hotelFruehstueck = false }) {
+// hotelNaechte: Daten, an deren Abend man im Hotel bleibt. Fehlt die Liste, gelten alle Abende außer dem letzten Tag.
+// Ein Eintrag für den letzten Tag oder außerhalb des Zeitraums wirkt nicht.
+// Nach einer Hotelnacht beginnt der Tag um 0:00, vor einer endet er um 24:00. Sonst gelten Abfahrt und Rückkehr.
+// Anreise, wenn nicht Hotelnacht davor und danach. Frühstück im Hotel gilt an Tagen nach einer Hotelnacht.
+export function reiseTageErzeugen({ von, bis, beginn, ende, land: lname, anlass = '', zusatz = '', hotelFruehstueck = false, hotelNaechte }) {
   if (bis < von) return [];
   const anzahl = Math.round((Date.parse(bis) - Date.parse(von)) / 86400000) + 1;
+  // Indizes der Tage, deren Abend im Hotel liegt
+  const naechte = new Set();
+  for (let i = 0; i < anzahl - 1; i++) {
+    if (!hotelNaechte || hotelNaechte.includes(tagPlus(von, i))) naechte.add(i);
+  }
   const tage = [];
   for (let i = 0; i < anzahl; i++) {
-    const erster = i === 0;
-    const letzter = i === anzahl - 1;
+    const davor = naechte.has(i - 1);
+    const danach = naechte.has(i);
     tage.push({
       datum: tagPlus(von, i),
       land: lname,
-      beginn: erster ? beginn : 0,
-      ende: letzter ? ende : TAG,
+      beginn: davor ? 0 : beginn,
+      ende: danach ? TAG : ende,
       anlass,
       zusatz,
-      anreise: erster || letzter,
-      fruehstueck: hotelFruehstueck && !erster,
+      anreise: !(davor && danach),
+      fruehstueck: davor && hotelFruehstueck,
       mittag: false,
       abend: false,
       uebernachtung: 0,
@@ -63,6 +70,16 @@ export function reiseTageErzeugen({ von, bis, beginn, ende, land: lname, anlass 
     });
   }
   return tage;
+}
+
+// Hotelnächte aus Reisetagen: Abende d mit ende === 1440 am Tag d und beginn === 0 am Folgetag (beide vorhanden).
+// Ergebnis: sortierte Datumstexte.
+export function hotelNaechteAus(tage) {
+  const nachDatum = new Map(tage.map((t) => [t.datum, t]));
+  return tage
+    .filter((t) => t.ende === TAG && nachDatum.get(tagPlus(t.datum, 1))?.beginn === 0)
+    .map((t) => t.datum)
+    .sort();
 }
 
 // Summen eines Monats aus allen aktiven Reisetagen (nicht gelöscht).

@@ -745,3 +745,14 @@ input.tag-pause-eingabe { width: 12rem; max-width: 100%; margin-left: auto; text
   .navi li { flex: 1 1 0; min-width: 0; }
   .navi .reiter { width: 100%; padding-inline: 2px; }
 }
+
+/* Dienstreise, Hotelnächte (reise_sheet.js): Schalter „Nacht im Hotel“ zwischen den Tagen der Vorschau */
+.reise-betraege.zwei { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.reise-zeiten-hinweis { margin-top: -6px; }
+.reise-nacht {
+  display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 0 20px;
+  font-size: .9375rem; color: var(--text-2);
+}
+.reise-nacht-symbol { flex: none; width: 20px; height: 20px; color: var(--text-2); }
+.reise-nacht-text { flex: 1 1 auto; min-width: 0; }
+.reise-nacht input[type="checkbox"][role="switch"] { flex: none; }
