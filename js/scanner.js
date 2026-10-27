@@ -121,11 +121,11 @@ async function leinwandAusDatei(datei) {
 }
 
 // Karte auf einer Leinwand erkennen: vier Ecken in Pixeln der Leinwand, oder null
-async function kartenEcken(leinwand) {
+async function kartenEcken(leinwand, seitenVerhaeltnis) {
   const k = await erkennung();
   if (!k?.karteErkennen) return null;
   try {
-    const fund = await k.karteErkennen(leinwand);
+    const fund = await k.karteErkennen(leinwand, seitenVerhaeltnis ? { seiten: seitenVerhaeltnis } : {});
     if (!fund) return null;
     const ecken = ordnen(fund.ecken);
     if (ecken) ecken.sicher = fund.wert >= 0.6;   // nur sichere Funde lösen automatisch aus
@@ -143,7 +143,8 @@ function istBereit(k) {
 
 // Öffnet den Scanner. Liefert [{rolle, blob}] (JPEG) oder null bei Abbrechen.
 // kontext.sheet wird nur gebraucht, wenn ein Foto nachgezogen wird (Zuschnitt).
-export function scannen(kontext, { seiten = ROLLEN } = {}) {
+// seitenVerhaeltnis: [min, max] für die Rahmenerkennung (ohne Angabe: Visitenkarte; Belege: BELEG_SEITEN)
+export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wort = 'Karte', titel = 'Visitenkarte scannen' } = {}) {
   const rollen = seiten.length ? [...seiten] : [...ROLLEN];
   return new Promise((ergebnis) => {
     const vorher = document.activeElement;
@@ -178,7 +179,7 @@ export function scannen(kontext, { seiten = ROLLEN } = {}) {
     const huelle = el('div', 'scanner');
     huelle.setAttribute('role', 'dialog');
     huelle.setAttribute('aria-modal', 'true');
-    huelle.setAttribute('aria-label', 'Visitenkarte scannen');
+    huelle.setAttribute('aria-label', titel);
 
     const bild = el('div', 'scanner-bild');
     const video = el('video', 'scanner-video');
@@ -190,7 +191,7 @@ export function scannen(kontext, { seiten = ROLLEN } = {}) {
     video.setAttribute('aria-hidden', 'true');
     const overlay = el('canvas', 'scanner-rahmen');
     overlay.setAttribute('aria-hidden', 'true');
-    const ohneKamera = el('div', 'scanner-ohne-kamera', 'Die Kamera steht nicht zur Verfügung. Mit dem runden Knopf ein Foto der Karte wählen.');
+    const ohneKamera = el('div', 'scanner-ohne-kamera', `Die Kamera steht nicht zur Verfügung. Mit dem runden Knopf ein Foto ${wort === 'Karte' ? 'der Karte' : 'des Belegs'} wählen.`);
     ohneKamera.hidden = true;
     const blitz = el('div', 'scanner-blitz');
     blitz.setAttribute('aria-hidden', 'true');
@@ -275,13 +276,13 @@ export function scannen(kontext, { seiten = ROLLEN } = {}) {
       }
       let text;
       if (modus === 'start') text = 'Kamera wird eingeschaltet …';
-      else if (modus === 'datei') text = 'Ein Foto der Karte wählen.';
-      else if (kanteFehlt) text = 'Karte ins Bild halten. Zum Aufnehmen auf den Knopf tippen.';
+      else if (modus === 'datei') text = `Ein Foto ${wort === 'Karte' ? 'der Karte' : 'des Belegs'} wählen.`;
+      else if (kanteFehlt) text = `${wort} ins Bild halten. Zum Aufnehmen auf den Knopf tippen.`;
       else if (video.readyState < 2) text = 'Kamera wird eingeschaltet …';
       else if (!bereit) text = 'Erkennung wird geladen …';
-      else if (!letzteEcken) text = 'Karte ins Bild halten';
-      else if (!auto) text = 'Karte erkannt. Zum Aufnehmen auf den Knopf tippen.';
-      else if (gesperrt) text = 'Karte wenden oder wegnehmen für die nächste Seite.';
+      else if (!letzteEcken) text = `${wort} ins Bild halten`;
+      else if (!auto) text = `${wort} erkannt. Zum Aufnehmen auf den Knopf tippen.`;
+      else if (gesperrt) text = `${wort} wenden oder wegnehmen für die nächste Seite.`;
       else text = 'Ruhig halten …';
       hinweisSetzen(text);
     }
@@ -425,7 +426,7 @@ export function scannen(kontext, { seiten = ROLLEN } = {}) {
           det.height = h;
         }
         detKtx.drawImage(video, 0, 0, w, h);
-        const ecken = await kartenEcken(det);
+        const ecken = await kartenEcken(det, seitenVerhaeltnis);
         bereit = istBereit(modulKante);
         if (!beendet) aktualisieren(ecken);
       } finally {
@@ -469,7 +470,7 @@ export function scannen(kontext, { seiten = ROLLEN } = {}) {
       melden('Das Foto wird erkannt …');
       try {
         const leinwand = await leinwandAusDatei(datei);
-        const blob = await jpeg(leinwand, await kartenEcken(leinwand));
+        const blob = await jpeg(leinwand, await kartenEcken(leinwand, seitenVerhaeltnis));
         ablegen(r, blob);
         rolle = naechsteRolle();
         rollenZeichnen();

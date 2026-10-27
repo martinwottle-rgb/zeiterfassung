@@ -9,6 +9,7 @@ const SCHWELLEN = [0.2, 0.3, 0.45]; // Kantenschwellen auf dem normierten Kanten
 const FLAECHE_MIN = 0.05; // Anteil der Konvexhülle an der Suchfläche
 const FLAECHE_MAX = 0.9;
 const SEITEN = [1.3, 2.0]; // Seitenverhältnis einer Visitenkarte (lang zu kurz)
+export const BELEG_SEITEN = [1.0, 6.0]; // Belege: von quadratisch bis langer Kassenzettel
 const MINDESTWERT = 0.3; // darunter gilt: keine Karte gefunden
 const WARTEZEIT = 60000; // ms, bis OpenCV nach dem Laden bereit sein muss
 
@@ -173,7 +174,8 @@ function uhrzeigerOben(punkte) {
 
 // Karte im Foto suchen (Ablauf wie karte_finden in tools/karte_finden_versuch.py). Liefert {ecken, wert} oder null.
 // ecken: vier Punkte {x, y} in Originalkoordinaten, oben links zuerst, im Uhrzeigersinn. wert: Bewertung (Sicherheit).
-export async function karteErkennen(quelle) {
+// seiten: erlaubtes Seitenverhältnis [min, max] (Vorgabe Visitenkarte, für Belege BELEG_SEITEN).
+export async function karteErkennen(quelle, { seiten = SEITEN } = {}) {
   await opencvLaden();
   const cv = globalThis.cv;
   const frei = [];
@@ -232,7 +234,7 @@ export async function karteErkennen(quelle) {
           const rw = rect.size.width;
           const rh = rect.size.height;
           const verh = Math.max(rw, rh) / Math.max(Math.min(rw, rh), 1);
-          if (verh < SEITEN[0] || verh > SEITEN[1]) continue;
+          if (verh < seiten[0] || verh > seiten[1]) continue;
           const box = cv.RotatedRect.points(rect).map((p) => ({ x: p.x, y: p.y }));
           const abdeckung = umfangAbdeckung(box, kantenD.data, w, h);
           const fuellt = ha / (rw * rh);

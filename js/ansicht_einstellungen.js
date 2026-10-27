@@ -189,10 +189,10 @@ const KONTAKT_FELDER = ['titel', 'vorname', 'nachname', 'firma', 'position', 'te
 let kontakteNeu = { laeuft: false, abbruch: false, nr: 0, gesamt: 0, anteil: 0, ergebnis: '' };
 let neuKontext = null;
 
-// Kontakte mit Kartenfoto, nicht gelöscht
+// Ungeprüfte Kontakte mit Kartenfoto, nicht gelöscht. Geprüfte (von Hand gesichert) werden nie überschrieben.
 async function kontakteMitFoto() {
   const liste = await alleEintraege('kontakte');
-  return liste.filter((k) => !k.geloescht && k.bildKarte);
+  return liste.filter((k) => !k.geloescht && k.bildKarte && k.geprueft !== true);
 }
 
 function kontakteStatusText() {
@@ -253,7 +253,7 @@ async function kontakteBestaetigen() {
     return;
   }
   if (!liste.length) {
-    kontakteNeu.ergebnis = 'Kein Kontakt hat ein Kartenfoto.';
+    kontakteNeu.ergebnis = 'Alle Kontakte sind geprüft. Sie bleiben, wie du sie gesichert hast.';
     kontakteAktualisieren();
     return;
   }
@@ -266,7 +266,7 @@ async function kontakteBestaetigen() {
     kontakteLauf(liste);
   });
   const inhalt = el('div', { klasse: 'formular-stapel' }, [
-    el('p', { klasse: 'notiz', text: `${anzahl} ${anzahl === 1 ? 'Kontakt' : 'Kontakte'} neu einlesen?` }),
+    el('p', { klasse: 'notiz', text: `${anzahl} ${anzahl === 1 ? 'ungeprüften Kontakt' : 'ungeprüfte Kontakte'} neu einlesen? Geprüfte bleiben unverändert.` }),
     el('div', { klasse: 'aktionen' }, [abbrechen, start]),
   ]);
   neuKontext.sheet.oeffnen('Kontakte neu einlesen', inhalt);
@@ -308,7 +308,8 @@ async function kontakteLauf(liste) {
         ...k,
         ...felder,
         notiz,
-        geprueft: true,
+        // Bleibt ungeprüft: erst Sichern von Hand macht ihn geprüft (dann geht er nach Outlook und ist geschützt)
+        geprueft: false,
         outlook: { status: 'offen', vorher, entryId: alt.entryId ?? '' },
       });
       neu += 1;
@@ -351,11 +352,11 @@ function kontakteGruppe() {
     text: kontakteStatusText(),
   });
   const wert = el('div', { klasse: 'einstellung-wert' }, [kontakteKnopf(), balken, status]);
-  const zeile = el('div', { klasse: 'liste-zeile' }, [el('span', { klasse: 'liste-titel', text: 'Alle Kontakte neu einlesen' }), wert]);
+  const zeile = el('div', { klasse: 'liste-zeile' }, [el('span', { klasse: 'liste-titel', text: 'Ungeprüfte Kontakte neu einlesen' }), wert]);
   return el('section', { klasse: 'gruppe' }, [
     el('h2', { klasse: 'eyebrow', text: 'Kontakte' }),
     el('div', { klasse: 'liste' }, [zeile]),
-    el('p', { klasse: 'gruppe-fuss', text: 'Liest alle Visitenkartenfotos mit der aktuellen Erkennung neu. Notizen und Fotos bleiben, die Felder werden ersetzt.' }),
+    el('p', { klasse: 'gruppe-fuss', text: 'Liest die Visitenkartenfotos ungeprüfter Kontakte mit der aktuellen Erkennung neu. Kontakte, die du geprüft und gesichert hast, werden nie überschrieben.' }),
   ]);
 }
 

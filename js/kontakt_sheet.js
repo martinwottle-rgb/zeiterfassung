@@ -1021,7 +1021,9 @@ export async function kontaktSeiteZeichnen(ziel, kontakt, kontext) {
         bildRueckseite: k.bildRueckseite ? { id: k.bildRueckseite } : null,
         bildNotiz: k.bildNotiz ? { id: k.bildNotiz } : null,
         originale: originaleVon(k),
-        hinweis: erg.fehler || 'Mit neuer Erkennung gelesen, bitte prüfen',
+        hinweis: erg.fehler || (k.geprueft === true
+          ? 'Mit neuer Erkennung gelesen. Sichern ersetzt deine geprüften Angaben, Abbrechen behält sie.'
+          : 'Mit neuer Erkennung gelesen, bitte prüfen'),
         quelle: quelleText(erg.quelle),
         unsicher: erg.unsicher,
         outlook: k.outlook,

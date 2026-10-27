@@ -1079,3 +1079,138 @@ a.segment-teil:focus-visible { outline: 2px solid var(--akzent); outline-offset:
 .scanner button:focus-visible, .scanner-schalter input:focus-visible {
   outline: 2px solid #fff; outline-offset: 2px;
 }
+
+/* Belege: Sheet */
+.beleg-auswahl { display: flex; flex-direction: column; gap: 14px; }
+.beleg-auswahl .knopf { width: 100%; }
+.beleg-datei { position: relative; cursor: pointer; }
+.beleg-datei:focus-within { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.beleg-datei .nur-sr { pointer-events: none; }
+.beleg-status { min-height: 1.4em; margin: 0; }
+.beleg-status[hidden] { display: none; }
+.beleg-status.fehler { color: var(--gefahr); }
+.beleg-hinweis { padding: 12px 16px; border-radius: 14px; background: var(--tint); color: var(--tint-text); }
+.beleg-hinweis[hidden] { display: none; }
+.beleg-gesamt { text-align: right; }
+.beleg-gesamt[hidden] { display: none; }
+.beleg-gruppe { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.beleg-legende { padding: 0; margin: 0 0 4px; font-size: .9375rem; font-weight: 700; color: var(--text); }
+.beleg-leer { margin: 0; }
+.beleg-fuss { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; margin-top: 4px; }
+.beleg-fuss .knopf { flex: 0 1 auto; }
+
+/* Seiten: Vorschau-Streifen, klein; Antippen vergrößert an Ort und Stelle */
+.beleg-seiten { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+.beleg-seite { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; width: 128px; max-width: 100%; }
+.beleg-seite:has(.beleg-vorschau.gross) { width: 100%; }
+.beleg-vorschau {
+  position: relative; display: block; width: 100%; margin: 0; padding: 0; overflow: hidden; cursor: zoom-in;
+  border: 1px solid var(--linie); border-radius: 12px; background: var(--karte); box-shadow: var(--karte-schatten);
+  font: inherit; color: var(--text-2);
+}
+.beleg-vorschau img { display: block; width: 100%; height: auto; }
+.beleg-vorschau.gross { cursor: zoom-out; }
+.beleg-vorschau:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.beleg-platzhalter { display: block; padding: 18px 12px; font-size: .875rem; text-align: center; }
+.beleg-pdf {
+  position: absolute; left: 8px; top: 8px; padding: 2px 8px; border-radius: 999px;
+  background: rgba(0, 0, 0, .6); color: #fff; font-size: .75rem; font-weight: 700;
+}
+.beleg-seite-entfernen {
+  min-height: 44px; padding: 0 4px; border: 0; background: none; color: var(--text);
+  font: inherit; font-size: .875rem; font-weight: 600; text-decoration: underline; cursor: pointer;
+}
+.beleg-seite-entfernen:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.beleg-hinzu { display: flex; flex-wrap: wrap; gap: 12px; }
+.beleg-hinzu[hidden] { display: none; }
+.beleg-hinzu .knopf { flex: 0 1 auto; }
+
+/* Felder: Betrag und Währung nebeneinander, Hinweise */
+.beleg-form input[type="date"], .beleg-form input[type="text"], .beleg-form select {
+  -webkit-appearance: none; appearance: none;
+}
+.beleg-betrag { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 120px); gap: 12px; align-items: start; }
+.beleg-unsicher-hinweis { margin: -2px 0 0; font-size: .8125rem; font-weight: 600; color: var(--warnung); }
+.beleg-unsicher-hinweis[hidden] { display: none; }
+.beleg-unsicher input, .beleg-unsicher select { border-color: var(--warnung); }
+.beleg-reise { margin: -8px 0 0; font-weight: 600; color: var(--text); }
+.beleg-reise[hidden] { display: none; }
+
+/* Abgegeben (Schalter) und Löschen */
+.beleg-schalter { display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 1rem; font-weight: 600; color: var(--text); cursor: pointer; }
+.beleg-schalter input { width: 24px; height: 24px; margin: 0; accent-color: var(--akzent); }
+.beleg-loeschen {
+  align-self: flex-start; min-height: 44px; padding: 0; border: 0; background: none;
+  color: var(--gefahr); font: inherit; font-size: 1rem; font-weight: 600; cursor: pointer;
+}
+.beleg-loeschen:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.beleg-loeschen-zone { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.beleg-loeschen-zone[hidden] { display: none; }
+.beleg-loeschen-zone .beleg-fuss { width: 100%; }
+
+/* Fortschritt der Texterkennung */
+.beleg-fortschritt-huelle { display: flex; flex-direction: column; gap: 14px; }
+.beleg-fortschritt-titel { font-size: 1rem; font-weight: 600; }
+.beleg-fortschritt {
+  display: block; width: 100%; height: 12px; margin: 0; appearance: none; -webkit-appearance: none;
+  border: 0; border-radius: 999px; background: var(--segment); overflow: hidden;
+}
+.beleg-fortschritt::-webkit-progress-bar { background: var(--segment); border-radius: 999px; }
+.beleg-fortschritt::-webkit-progress-value { background: var(--akzent); border-radius: 999px; }
+.beleg-fortschritt::-moz-progress-bar { background: var(--akzent); border-radius: 999px; }
+
+/* Belege: Liste */
+.belege-segment { margin: 0 0 14px; }
+.belege-auswahl-knopf[hidden], .belege-banner[hidden], .belege-meldung[hidden], .belege-leiste[hidden] { display: none; }
+.belege-banner {
+  display: flex; flex-direction: column; gap: 12px; margin: 0 0 14px; padding: 14px 16px;
+  border-radius: 14px; background: var(--tint); color: var(--tint-text);
+}
+.belege-banner-text { margin: 0; font-size: .9375rem; font-weight: 600; }
+.belege-banner-aktionen { display: flex; flex-wrap: wrap; gap: 10px; }
+.belege-meldung { min-height: 1.4em; margin: 0 0 12px; font-size: .9375rem; color: var(--text-2); }
+.belege-meldung.fehler { color: var(--gefahr); }
+.belege-meldung .knopf { margin-left: 10px; vertical-align: middle; }
+.belege-gruppe { margin: 0 0 18px; min-width: 0; }
+.belege-gruppe-kopf {
+  position: sticky; top: var(--belege-oben, 0px); z-index: 5; display: flex; flex-wrap: wrap;
+  align-items: center; justify-content: space-between; gap: 6px 12px; margin: 0 0 8px; padding: 6px 6px 6px 14px;
+  border: 1px solid var(--glas-kante); border-radius: 999px; background: var(--glas-stark);
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+}
+.belege-gruppe-titel { margin: 0; font-size: .8125rem; font-weight: 600; line-height: 1.3; color: var(--text-2); }
+.belege-gruppe-rechts { display: flex; align-items: center; gap: 10px; margin-left: auto; }
+.belege-gruppe-summe { font-size: .8125rem; font-weight: 600; color: var(--text); }
+.belege-pdf {
+  min-height: 36px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--akzent-weich);
+  color: var(--akzent-schrift); font: inherit; font-size: .8125rem; font-weight: 600; cursor: pointer;
+}
+.belege-pdf:disabled { opacity: .5; cursor: default; }
+.belege-pdf:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.belege-liste > li + li { border-top: 1px solid var(--linie); }
+.belege-liste .liste-zeile { border-top: 0; }
+label.belege-zeile { cursor: pointer; }
+.belege-zeile:focus-within { outline: 2px solid var(--akzent); outline-offset: -2px; }
+.belege-mini {
+  display: flex; flex: 0 0 44px; align-items: center; justify-content: center; width: 44px; height: 44px;
+  overflow: hidden; border-radius: 10px; background: var(--segment); color: var(--text-2);
+}
+.belege-mini img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.belege-mini svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.belege-zeile .liste-text { flex: 1 1 auto; min-width: 0; }
+.belege-zeile .liste-titel { overflow-wrap: anywhere; }
+.belege-rechts {
+  display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; gap: 2px; max-width: 45%;
+  text-align: right; font-size: .9375rem; font-weight: 600; color: var(--text);
+}
+.belege-fehlt { font-size: .875rem; font-weight: 600; color: var(--warnung); }
+.belege-abgegeben { font-size: .75rem; font-weight: 600; color: var(--erfolg); }
+.belege-haken { flex: 0 0 auto; width: 24px; height: 24px; margin: 0; accent-color: var(--akzent); }
+.belege-leiste {
+  position: sticky; bottom: calc(88px + env(safe-area-inset-bottom, 0px)); z-index: 8;
+  display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; margin-top: 8px; padding: 12px;
+  border: 1px solid var(--glas-kante); border-radius: var(--r-glas);
+  background: var(--glas-stark); box-shadow: var(--glas-schatten);
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+}
+.belege-leiste .knopf:disabled { opacity: .45; cursor: default; transform: none; }
