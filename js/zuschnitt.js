@@ -393,14 +393,23 @@ function startEckenFuer(leinwand) {
   return punkte.map((p) => ({ x: p.x / leinwand.width, y: p.y / leinwand.height }));
 }
 
+// Optionale Startecken: vier Punkte {x, y}, normiert 0 bis 1 (oben links, oben rechts, unten rechts, unten links).
+// Ungültige Angaben ergeben null, dann gilt die Erkennung oder der Rand.
+function gueltigeEcken(e) {
+  if (!Array.isArray(e) || e.length !== 4) return null;
+  if (!e.every((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))) return null;
+  return e.map((p) => ({ x: Math.min(Math.max(p.x, 0), 1), y: Math.min(Math.max(p.y, 0), 1) }));
+}
+
 // Öffnet das Zuschnitt-Sheet. Liefert ein JPEG-Blob, oder null, wenn abgebrochen wird.
+// startEcken (optional, s. gueltigeEcken) ersetzt die automatische Startlage.
 // Scheitert das Laden des Bildes, wird ein Fehler mit deutscher Meldung geworfen.
-export async function zuschneiden(datei, kontext) {
+export async function zuschneiden(datei, kontext, startEcken = null) {
   const leinwand0 = await arbeitsLeinwand(datei);
 
   return new Promise((resolve) => {
     let leinwand = leinwand0;
-    let ecken = startEckenFuer(leinwand);
+    let ecken = gueltigeEcken(startEcken) ?? startEckenFuer(leinwand);
     let kontrast = false;
     let beendet = false;
     let ziehend = null;

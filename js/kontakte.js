@@ -265,6 +265,8 @@ export function visitenkarteLesen(text) {
     .replace(/(https?:)\/(?=www\.)/gi, '$1//')
     // OCR liest „KG“ oft als „KC“ („GmbH & Co KC“), und Markenzeichen wie „™“ stören in „ST™M“
     .replace(/\bCo(\.?)\s+K[CG]\b/g, 'Co$1 KG')
+    // Nummer, die OCR über zwei Zeilen geteilt hat („Mobil: +49“ / „/345 703 57“): wieder zu einer Zeile verbinden
+    .replace(/([\d)])[ \t]*\r?\n[ \t]*([\/-][ \t]*\d)/g, '$1 $2')
     .replace(/[™®©]/g, '');
 
   // Teile: Zeilen, an „·“, „|“ oder „•“ getrennt; jeder Teil merkt sich seinen Block

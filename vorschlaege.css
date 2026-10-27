@@ -287,3 +287,13 @@ body:has(.kontakt-seite) .zahnrad { display: none; }
   .kontakt-seite-loeschen { transition: transform 120ms ease-out; }
   .kontakt-seite-loeschen:active { transform: scale(.99); }
 }
+/* Großes Foto im Sheet (Kontaktseite) mit Zuschneiden und Schließen, Rückfrage nach dem Zuschnitt */
+.kontakt-bild { display: flex; flex-direction: column; gap: 14px; }
+.kontakt-bild-platz { min-height: 180px; display: grid; place-items: center; margin: 0; font-size: 1rem; color: var(--text-2); text-align: center; }
+.kontakt-bild-gross {
+  display: block; width: 100%; max-height: 60vh; object-fit: contain; margin: 0;
+  border-radius: var(--r-karte); background: var(--karte); border: 1px solid var(--linie); box-shadow: var(--karte-schatten);
+}
+.kontakt-bild-frage { margin: 0; font-size: 1rem; text-align: center; }
+.kontakt-bild-fuss { display: flex; gap: 12px; }
+.kontakt-bild-fuss .knopf { flex: 1 1 0; }

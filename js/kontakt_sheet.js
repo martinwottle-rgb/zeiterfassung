@@ -96,15 +96,192 @@ async function bildBlob(id) {
   }
 }
 
-// Foto klein, Antippen vergrößert es an Ort und Stelle (kein Sheet-Wechsel, Eingaben bleiben)
-function vorschau(quelle, alt) {
+// Die Originale der Fotos (vor dem ersten Zuschneiden). Sichern und Neu einlesen geben sie weiter, sonst gingen sie verloren.
+const ORIGINALE = ['bildKarteOriginal', 'bildRueckseiteOriginal', 'bildNotizOriginal'];
+function originaleVon(k) {
+  return Object.fromEntries(ORIGINALE.map((key) => [key, k[key] ?? null]));
+}
+
+// Startecken für den Zuschnitt aus karteErkennen (kantenerkennung.js, per dynamischem Import). Liefert vier
+// normierte Punkte, sonst null (dann bleibt es beim Rand des Fotos).
+async function startEckenErkennen(blob) {
+  let bitmap = null;
+  try {
+    const modul = await import('./kantenerkennung.js');
+    if (typeof modul.karteErkennen !== 'function') return null;
+    bitmap = await createImageBitmap(blob);
+    // Als Vorschlag zum Nachziehen genügt auch eine unsichere Erkennung
+    const fund = await modul.karteErkennen(bitmap);
+    const ecken = fund?.ecken;
+    if (!Array.isArray(ecken) || ecken.length !== 4) return null;
+    return ecken.map((p) => ({ x: p.x / bitmap.width, y: p.y / bitmap.height }));
+  } catch (e) {
+    console.warn('Karte nicht gefunden', e?.message);
+    return null;
+  } finally {
+    bitmap?.close?.();
+  }
+}
+
+// Foto groß im Sheet, mit Zuschneiden und Schließen. Gezeigt wird das aktuelle Bild (feld: bildKarte, bildRueckseite, bildNotiz).
+function fotoGross(k, feld, titel, kontext, meldung) {
+  const huelle = el('div', 'kontakt-bild');
+  const platz = el('p', 'kontakt-bild-platz', 'Wird geladen …');
+  const status = el('p', 'notiz kontakt-status');
+  status.setAttribute('role', 'status');
+  const zuschnittKnopf = el('button', 'knopf haupt', 'Zuschneiden');
+  zuschnittKnopf.type = 'button';
+  zuschnittKnopf.disabled = true;
+  const schliessenKnopf = el('button', 'knopf', 'Schließen');
+  schliessenKnopf.type = 'button';
+  schliessenKnopf.addEventListener('click', () => kontext.sheet.schliessen());
+  const fuss = el('div', 'kontakt-bild-fuss');
+  fuss.append(zuschnittKnopf, schliessenKnopf);
+  huelle.append(platz, status, fuss);
+  kontext.sheet.oeffnen(titel, huelle);
+
+  bildBlob(k[feld]).then((blob) => {
+    if (!blob) {
+      platz.textContent = 'Auf diesem Gerät nicht vorhanden.';
+      return;
+    }
+    const img = new Image();
+    img.alt = titel;
+    img.decoding = 'async';
+    img.className = 'kontakt-bild-gross';
+    img.src = URL.createObjectURL(blob);
+    platz.replaceWith(img);
+    zuschnittKnopf.disabled = false;
+  }).catch(() => {
+    platz.textContent = 'Das Foto konnte nicht geladen werden.';
+  });
+
+  // Meldungen vor dem Zuschnitt stehen im großen Foto, danach auf der Seite (das Sheet ist dann weg)
+  const imSheet = (text, fehler = false) => {
+    status.textContent = text;
+    status.classList.toggle('fehler', fehler);
+  };
+  zuschnittKnopf.addEventListener('click', () => zuschneidenFoto(k, feld, kontext, meldung, imSheet));
+  return huelle;
+}
+
+// Zuschneiden: Quelle ist das Original (sonst das aktuelle Bild), Startecken aus der Kartenerkennung.
+// Das neue Bild wird abgelegt, der Kontakt gespeichert (Original nur beim ersten Mal), dann die Rückfrage.
+async function zuschneidenFoto(k, feld, kontext, meldung, imSheet) {
+  const originalFeld = `${feld}Original`;
+  let blob = null;
+  try {
+    const quelle = await bildBlob(k[originalFeld] ?? k[feld]);
+    if (!quelle) {
+      imSheet('Das Foto ist auf diesem Gerät nicht vorhanden.', true);
+      return;
+    }
+    const startEcken = await startEckenErkennen(quelle);
+    blob = await zuschneiden(quelle, kontext, startEcken);
+  } catch (e) {
+    imSheet(e?.message || 'Das Foto konnte nicht geöffnet werden.', true);
+    return;
+  }
+  if (!blob) return; // abgebrochen, das Sheet ist schon geschlossen
+
+  let gespeichert = null;
+  try {
+    const neueId = await bildSpeichern(blob);
+    // Outlook: wie beim Sichern im Formular, der bisherige Status merkt sich in vorher
+    const alt = k.outlook ?? {};
+    const vorher = alt.status === 'offen' ? (alt.vorher ?? '') : (alt.status ?? '');
+    gespeichert = await speichern('kontakte', {
+      ...k,
+      [feld]: neueId,
+      [originalFeld]: k[originalFeld] ?? k[feld],
+      outlook: { status: 'offen', vorher, entryId: alt.entryId ?? '' },
+    });
+  } catch (e) {
+    console.error(e);
+    kontext.sheet.schliessen();
+    meldung('Speichern hat nicht geklappt. Bitte noch einmal versuchen.', true);
+    return;
+  }
+
+  if (feld === 'bildNotiz') {
+    kontext.sheet.schliessen();
+    meldung('Das zugeschnittene Foto ist gespeichert.');
+    return;
+  }
+  zuschnittFrage(gespeichert, feld, blob, kontext, meldung);
+}
+
+// Rückfrage nach dem Zuschneiden von Vorder- oder Rückseite
+function zuschnittFrage(k, feld, blob, kontext, meldung) {
+  const huelle = el('div', 'kontakt-bild');
+  const frage = el('p', 'notiz kontakt-bild-frage', 'Mit dem zugeschnittenen Bild neu einlesen?');
+  frage.id = 'kontakt-bild-frage';
+  const nein = el('button', 'knopf', 'Nein');
+  nein.type = 'button';
+  nein.addEventListener('click', () => kontext.sheet.schliessen());
+  const ja = el('button', 'knopf haupt', 'Ja');
+  ja.type = 'button';
+  ja.addEventListener('click', () => neuLesenNachZuschnitt(k, feld, blob, kontext, meldung));
+  const fuss = el('div', 'kontakt-bild-fuss');
+  fuss.append(nein, ja);
+  huelle.append(frage, fuss);
+  kontext.sheet.oeffnen('Foto zugeschnitten', huelle);
+  ja.focus();
+}
+
+// Neu einlesen nach dem Zuschnitt, wie der Knopf „Neu einlesen“: Vorder- und Rückseite zusammen (eine Seite
+// allein mit kontaktAusBild). Das Ergebnis öffnet das Bearbeiten-Formular zur Prüfung.
+async function neuLesenNachZuschnitt(k, feld, blob, kontext, meldung) {
+  let erg = null;
+  try {
+    const vorder = feld === 'bildKarte' ? blob : await bildBlob(k.bildKarte);
+    const rueck = feld === 'bildRueckseite' ? blob : await bildBlob(k.bildRueckseite);
+    const seiten = [vorder, rueck].filter(Boolean);
+    erg = seiten.length === 1
+      ? await bildLesen(seiten[0], kontext)
+      : await erkennungLaufen(kontext, (zeigen) => erkennung.kontaktAusSeiten(seiten, zeigen));
+  } catch (e) {
+    console.error(e);
+    kontext.sheet.schliessen();
+    meldung('Neu einlesen hat nicht geklappt. Bitte noch einmal versuchen.', true);
+    return;
+  }
+  formularOeffnen({
+    titel: 'Kontakt bearbeiten',
+    id: k.id,
+    erstellt: k.erstellt,
+    felder: Object.fromEntries(FELDNAMEN.map((key) => [key, erg.felder[key] ?? ''])),
+    rohText: erg.text,
+    notiz: k.notiz ?? '',
+    bildKarte: k.bildKarte ? { id: k.bildKarte } : null,
+    bildRueckseite: k.bildRueckseite ? { id: k.bildRueckseite } : null,
+    bildNotiz: k.bildNotiz ? { id: k.bildNotiz } : null,
+    originale: originaleVon(k),
+    hinweis: erg.fehler || 'Mit neuer Erkennung gelesen, bitte prüfen',
+    quelle: quelleText(erg.quelle),
+    unsicher: erg.unsicher,
+    outlook: k.outlook,
+  }, kontext);
+}
+
+// Foto klein. Ohne aufOeffnen vergrößert Antippen es an Ort und Stelle (kein Sheet-Wechsel, Eingaben bleiben);
+// mit aufOeffnen ruft Antippen diese Funktion auf (z. B. ein Sheet mit dem großen Foto).
+function vorschau(quelle, alt, aufOeffnen = null) {
   const knopf = el('button', 'kontakt-vorschau');
   knopf.type = 'button';
-  knopf.setAttribute('aria-expanded', 'false');
+  if (aufOeffnen) {
+    knopf.setAttribute('aria-haspopup', 'dialog');
+  } else {
+    knopf.setAttribute('aria-expanded', 'false');
+  }
   knopf.setAttribute('aria-label', `${alt}, antippen zum Vergrößern`);
   const platz = el('span', 'kontakt-platzhalter', 'Wird geladen …');
   knopf.append(platz);
   knopf.addEventListener('click', () => {
+    if (aufOeffnen) {
+      aufOeffnen();
+      return;
+    }
     const gross = knopf.classList.toggle('gross');
     knopf.setAttribute('aria-expanded', String(gross));
   });
@@ -253,7 +430,8 @@ function bildLesen(blob, kontext) {
 
 // Formular für Erfassen und Bearbeiten. stand: { titel, id, erstellt, felder, rohText, notiz,
 // bildKarte: {id} | {blob} | null, bildNotiz: {id} | {blob} | null, hinweis, quelle, unsicher,
-// outlook, anleitung (Anleitung für „Text scannen“), fokus (Feld „Text der Karte“ fokussieren) }.
+// outlook, anleitung (Anleitung für „Text scannen“), fokus (Feld „Text der Karte“ fokussieren),
+// originale (bild…Original-Felder, werden beim Sichern unverändert mitgespeichert) }.
 function formularOeffnen(stand, kontext) {
   const felder = {};
   const werte = { ...leereFelder(), ...(stand.felder ?? {}) };
@@ -394,7 +572,9 @@ function formularOeffnen(stand, kontext) {
       formularOeffnen({ ...vorher, hinweis: e?.message || 'Das Foto konnte nicht geöffnet werden.' }, kontext);
       return;
     }
-    formularOeffnen({ ...vorher, bildNotiz: blob ? { blob } : vorher.bildNotiz }, kontext);
+    // Ein neu gewähltes Notizfoto hat kein Original mehr (das alte gehört zum ersetzten Bild)
+    const originale = blob ? { ...vorher.originale, bildNotizOriginal: null } : vorher.originale;
+    formularOeffnen({ ...vorher, bildNotiz: blob ? { blob } : vorher.bildNotiz, originale }, kontext);
   };
   const notizBilder = [];
   if (stand.bildNotiz) notizBilder.push(vorschau(stand.bildNotiz, 'Foto der Notiz'));
@@ -468,6 +648,7 @@ function formularOeffnen(stand, kontext) {
       const alt = stand.outlook ?? {};
       const vorher = alt.status === 'offen' ? (alt.vorher ?? '') : (alt.status ?? '');
       await speichern('kontakte', {
+        ...(stand.originale ?? {}), // Originale der Fotos bleiben erhalten
         ...daten,
         id: stand.id ?? null,
         bildKarte,
@@ -608,6 +789,7 @@ function kontaktBearbeiten(k, kontext) {
     bildKarte: k.bildKarte ? { id: k.bildKarte } : null,
     bildRueckseite: k.bildRueckseite ? { id: k.bildRueckseite } : null,
     bildNotiz: k.bildNotiz ? { id: k.bildNotiz } : null,
+    originale: originaleVon(k),
     hinweis: '',
     outlook: k.outlook,
   }, kontext);
@@ -762,11 +944,11 @@ export async function kontaktSeiteZeichnen(ziel, kontakt, kontext) {
   if (adresse.length) inhalt.append(gruppeListe('Adresse', adresse));
   if (k.notiz) inhalt.append(abschnittKarte('Notiz', [el('p', null, k.notiz)]));
 
-  // Fotos antippen vergrößert an Ort und Stelle
+  // Fotos antippen öffnet das große Foto im Sheet (Zuschneiden, Schließen)
   const bilder = [];
-  if (k.bildKarte) bilder.push(vorschau({ id: k.bildKarte }, 'Foto der Visitenkarte'));
-  if (k.bildRueckseite) bilder.push(vorschau({ id: k.bildRueckseite }, 'Foto der Rückseite'));
-  if (k.bildNotiz) bilder.push(vorschau({ id: k.bildNotiz }, 'Foto der Notiz'));
+  if (k.bildKarte) bilder.push(vorschau({ id: k.bildKarte }, 'Foto der Visitenkarte', () => fotoGross(k, 'bildKarte', 'Foto der Visitenkarte', kontext, statusSetzen)));
+  if (k.bildRueckseite) bilder.push(vorschau({ id: k.bildRueckseite }, 'Foto der Rückseite', () => fotoGross(k, 'bildRueckseite', 'Foto der Rückseite', kontext, statusSetzen)));
+  if (k.bildNotiz) bilder.push(vorschau({ id: k.bildNotiz }, 'Foto der Notiz', () => fotoGross(k, 'bildNotiz', 'Foto der Notiz', kontext, statusSetzen)));
   if (bilder.length) {
     const reihe = el('div', 'kontakt-bilder');
     reihe.append(...bilder);
@@ -838,6 +1020,7 @@ export async function kontaktSeiteZeichnen(ziel, kontakt, kontext) {
         bildKarte: { id: k.bildKarte },
         bildRueckseite: k.bildRueckseite ? { id: k.bildRueckseite } : null,
         bildNotiz: k.bildNotiz ? { id: k.bildNotiz } : null,
+        originale: originaleVon(k),
         hinweis: erg.fehler || 'Mit neuer Erkennung gelesen, bitte prüfen',
         quelle: quelleText(erg.quelle),
         unsicher: erg.unsicher,

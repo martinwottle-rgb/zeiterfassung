@@ -17,7 +17,9 @@ const KARTE_MIN = 1600; // lange Seite der entzerrten Karte: mindestens 1600 px 
 const KARTE_MAX = 2400; // ... höchstens 2400 px (sonst wird die Entzerrung zu langsam)
 // Karte vor der Texterkennung suchen und entzerren. Aus: Die Kartenerkennung (kantenerkennung.js) findet noch nicht
 // zuverlässig die Karte; entzerrt wird dann falsch und die Erkennung wird schlechter (karten.html 42 statt 146 Felder).
-const KARTE_ENTZERREN = false;
+const KARTE_ENTZERREN = true;
+// Nur bei sicherer Erkennung ausschneiden: unter 0,6 erfasste die Erkennung auf Testfotos teils nur einen Ausschnitt der Karte
+const KARTE_SICHER_AB = 0.6;
 const DUNKEL = 110; // mittlere Helligkeit unter diesem Wert: dunkle Karte, Texterkennung auf Invertiertes
 
 const leer = () => Object.fromEntries(FELDER.map((f) => [f, '']));
@@ -144,7 +146,8 @@ async function karteEntzerren(bitmap) {
   let ecken = null;
   if (KARTE_ENTZERREN) {
     try {
-      ecken = await karteErkennen(bitmap);
+      const fund = await karteErkennen(bitmap);
+      ecken = fund && fund.wert >= KARTE_SICHER_AB ? fund.ecken : null;
     } catch {
       ecken = null; // OpenCV nicht verfügbar: ohne Zuschnitt weiter
     }

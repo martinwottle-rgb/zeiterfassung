@@ -83,11 +83,126 @@ function entitaetenDekodieren(s) {
   });
 }
 
+// Vorverarbeitung vor Tesseract: Graustufen, Hintergrund schätzen und das Bild durch ihn teilen (Beleuchtung und
+// gemusterten Grund ausgleichen), dann Tonwerte auf das 1. bis 99. Perzentil spreizen. Die längere Seite wird auf
+// höchstens 2400 px gebracht; kleine Bilder werden dafür höchstens verdoppelt.
+const MAX_SEITE = 2400;
+const MAX_FAKTOR = 2;
+// Liegt die Summe der Wortsicherheiten darunter, probiert die Erkennung zusätzlich eine adaptive Schwelle
+const SCHWACH_SUMME = 1200;
+
+function leinwand(w, h) {
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  return c;
+}
+
+// Blob (Bilddatei) in ein Canvas bringen; ein Canvas bleibt unverändert
+async function quelleAlsCanvas(q) {
+  if (!(q instanceof Blob)) return q;
+  const bmp = await createImageBitmap(q);
+  const c = leinwand(bmp.width, bmp.height);
+  c.getContext('2d').drawImage(bmp, 0, 0);
+  bmp.close();
+  return c;
+}
+
+// Quadratischer Mittelwert über ein Fenster mit Radius r (zweimal anwenden ergibt einen weicheren Verlauf)
+function boxBlur(a, w, h, r) {
+  const t = new Float32Array(w * h);
+  const out = new Float32Array(w * h);
+  const k = 2 * r + 1;
+  for (let y = 0; y < h; y++) {
+    const o = y * w;
+    let s = 0;
+    for (let i = -r; i <= r; i++) s += a[o + Math.min(w - 1, Math.max(0, i))];
+    for (let x = 0; x < w; x++) {
+      t[o + x] = s / k;
+      s += a[o + Math.min(w - 1, x + r + 1)] - a[o + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < w; x++) {
+    let s = 0;
+    for (let i = -r; i <= r; i++) s += t[Math.min(h - 1, Math.max(0, i)) * w + x];
+    for (let y = 0; y < h; y++) {
+      out[y * w + x] = s / k;
+      s += t[Math.min(h - 1, y + r + 1) * w + x] - t[Math.max(0, y - r) * w + x];
+    }
+  }
+  return out;
+}
+
+// Hintergrund durch Division ausgleichen, Ergebnis 0 bis 255 mit gespreizten Tonwerten
+function normalisieren(g, w, h) {
+  const r = Math.max(2, Math.round(0.03 * w));
+  const bg = boxBlur(boxBlur(g, w, h, r), w, h, r);
+  const n = new Float32Array(w * h);
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < n.length; i++) {
+    const v = Math.min(255, (g[i] / Math.max(bg[i], 1)) * 200);
+    n[i] = v;
+    hist[Math.round(v)]++;
+  }
+  let p1 = 0;
+  let p99 = 255;
+  let acc = 0;
+  let p1Gefunden = false;
+  for (let v = 0; v < 256; v++) {
+    acc += hist[v];
+    if (!p1Gefunden && acc >= n.length * 0.01) { p1 = v; p1Gefunden = true; }
+    if (acc >= n.length * 0.99) { p99 = v; break; }
+  }
+  const spanne = Math.max(1, p99 - p1);
+  for (let i = 0; i < n.length; i++) n[i] = Math.min(1, Math.max(0, (n[i] - p1) / spanne)) * 255;
+  return n;
+}
+
+// Adaptive Schwelle: Pixel, die deutlich dunkler sind als ihr Umfeld, werden schwarz, der Rest weiß
+function schwelle(n, w, h) {
+  const r = Math.max(2, Math.round(0.02 * w));
+  const mittel = boxBlur(n, w, h, r);
+  const out = new Float32Array(n.length);
+  for (let i = 0; i < n.length; i++) out[i] = n[i] < mittel[i] - 12 ? 0 : 255;
+  return out;
+}
+
+// Liefert das vorbereitete Canvas und den Maßstab (vorbereitet / Original), um Koordinaten zurückzurechnen
+async function vorbereiten(quelle, modus) {
+  const src = await quelleAlsCanvas(quelle);
+  const W = src.width;
+  const H = src.height;
+  const skala = Math.min(MAX_SEITE / Math.max(W, H), MAX_FAKTOR);
+  const w = Math.max(1, Math.round(W * skala));
+  const h = Math.max(1, Math.round(H * skala));
+  const c = leinwand(w, h);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, 0, 0, w, h);
+  const bild = ctx.getImageData(0, 0, w, h);
+  const d = bild.data;
+  const g = new Float32Array(w * h);
+  for (let i = 0; i < g.length; i++) {
+    const k = 4 * i;
+    g[i] = 0.299 * d[k] + 0.587 * d[k + 1] + 0.114 * d[k + 2];
+  }
+  let aus = normalisieren(g, w, h);
+  if (modus === 'adaptiv') aus = schwelle(aus, w, h);
+  for (let i = 0; i < aus.length; i++) {
+    const k = 4 * i;
+    d[k] = d[k + 1] = d[k + 2] = aus[i];
+    d[k + 3] = 255;
+  }
+  ctx.putImageData(bild, 0, 0);
+  return { canvas: c, skala };
+}
+
 // Erkennt Text aus einem Blob (Bilddatei) oder einem Canvas. Liefert den Text als String.
 export async function textErkennen(blobOderCanvas, fortschritt) {
   aktuellerFortschritt = fortschritt ?? null;
   const worker = await workerHolen();
-  const { data } = await worker.recognize(blobOderCanvas);
+  const { canvas } = await vorbereiten(blobOderCanvas, 'grau');
+  const { data } = await worker.recognize(canvas);
   return entitaetenDekodieren((data.text ?? '').trim());
 }
 
@@ -96,10 +211,43 @@ export async function textErkennen(blobOderCanvas, fortschritt) {
 // Tesseract fasst zweispaltige Karten oft zu einem Absatz zusammen. Daher werden Wortgruppen innerhalb einer
 // Zeile an großen Lücken (über max(60 px, 3 Worthöhen)) getrennt; Gruppen mit überschneidenden x-Bereichen
 // bilden einen Block (eine Spalte). Zeilen eines Blocks werden mit Zeilenumbruch verbunden.
+function alleWoerter(data) {
+  return (data.blocks ?? []).flatMap((b) => (b.paragraphs ?? []).flatMap((p) => (p.lines ?? []).flatMap((l) => l.words ?? [])));
+}
+
+// Ein Erkennungslauf mit einem Modus; punkte = Summe der Wortsicherheiten der behaltenen Wörter
+async function durchlauf(worker, quelle, modus) {
+  let canvas;
+  let skala = 1;
+  if (modus === 'original') {
+    canvas = await quelleAlsCanvas(quelle);
+  } else {
+    ({ canvas, skala } = await vorbereiten(quelle, modus));
+  }
+  const { data } = await worker.recognize(canvas, {}, { blocks: true });
+  const punkte = alleWoerter(data).filter(wortBleibt).reduce((s, w) => s + (w.confidence ?? 0), 0);
+  return { liste: blockeAusDaten(data, skala), punkte };
+}
+
+// Mehrere Durchläufe (vorbereitet grau, unverändert), das Ergebnis mit der größeren Wortsicherheit gewinnt.
+// Liegt die Summe darunter, kommt die adaptive Schwelle dazu.
 export async function textBloecke(blobOderCanvas, fortschritt) {
   aktuellerFortschritt = fortschritt ?? null;
   const worker = await workerHolen();
-  const { data } = await worker.recognize(blobOderCanvas, {}, { blocks: true });
+  let besten = null;
+  for (const m of ['grau', 'original']) {
+    const e = await durchlauf(worker, blobOderCanvas, m);
+    if (!besten || e.punkte > besten.punkte) besten = e;
+  }
+  if (besten.punkte < SCHWACH_SUMME) {
+    const zweit = await durchlauf(worker, blobOderCanvas, 'adaptiv');
+    if (zweit.punkte > besten.punkte) besten = zweit;
+  }
+  return besten.liste;
+}
+
+// Aus der Tesseract-Ausgabe die Blöcke bilden; Koordinaten zurück auf das Originalmaß (÷ skala)
+function blockeAusDaten(data, skala) {
   const liste = [];
   for (const block of data.blocks ?? []) {
     for (const absatz of block.paragraphs ?? []) {
@@ -163,10 +311,10 @@ export async function textBloecke(blobOderCanvas, fortschritt) {
         const summe = woerter.reduce((s, w) => s + w.confidence, 0);
         liste.push({
           text: zeilen.join('\n'),
-          x: x0,
-          y: y0,
-          b: x1 - x0,
-          h: y1 - y0,
+          x: Math.round(x0 / skala),
+          y: Math.round(y0 / skala),
+          b: Math.round((x1 - x0) / skala),
+          h: Math.round((y1 - y0) / skala),
           sicherheit: Math.round(summe / woerter.length),
         });
       }

@@ -125,7 +125,11 @@ async function kartenEcken(leinwand) {
   const k = await erkennung();
   if (!k?.karteErkennen) return null;
   try {
-    return ordnen(await k.karteErkennen(leinwand));
+    const fund = await k.karteErkennen(leinwand);
+    if (!fund) return null;
+    const ecken = ordnen(fund.ecken);
+    if (ecken) ecken.sicher = fund.wert >= 0.6;   // nur sichere Funde lösen automatisch aus
+    return ecken;
   } catch (e) {
     console.warn('Kartenerkennung ohne Ergebnis', e);
     return null;
@@ -154,7 +158,7 @@ export function scannen(kontext, { seiten = ROLLEN } = {}) {
     let kamera = null;
     let beendet = false;
     let ausgeblendet = false;
-    let auto = false; // Vorerst aus: die Kartenerkennung ist auf hellem Tisch noch nicht zuverlässig (27.10.)
+    let auto = true; // löst nur bei sicherer Erkennung (Wert ab 0,6) aus
     let gesperrt = false; // nach einer Auto-Aufnahme erst wieder, wenn die Karte weg war
     let fehlt = 0;
     let letzteEcken = null; // in Pixeln von det
@@ -197,7 +201,7 @@ export function scannen(kontext, { seiten = ROLLEN } = {}) {
     abbrechen.type = 'button';
     const schalter = document.createElement('input');
     schalter.type = 'checkbox';
-    schalter.checked = false;
+    schalter.checked = true;
     schalter.setAttribute('role', 'switch');
     const schalterWort = el('span', null, 'Automatisch');
     const schalterFeld = el('label', 'scanner-schalter');
@@ -403,7 +407,7 @@ export function scannen(kontext, { seiten = ROLLEN } = {}) {
       letzteEcken = ecken;
       ruheEcken = ecken;
       rahmenZeichnen();
-      if (auto && !gesperrt && !arbeitet && jetzt - ruheSeit >= RUHE_MS) aufnehmen(true);
+      if (auto && ecken.sicher && !gesperrt && !arbeitet && jetzt - ruheSeit >= RUHE_MS) aufnehmen(true);
     }
 
     // Ein Lauf zur Zeit. Der erste Lauf lädt OpenCV, deshalb wartet die Schleife dann.
