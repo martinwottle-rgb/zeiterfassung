@@ -156,3 +156,134 @@ html, body { overscroll-behavior-y: contain; }
 .heute-karte .feld > label { color: var(--tint-text); }
 .heute-karte .feld-fehler { color: var(--gefahr); }
 .heute-karte .karte-aktion { margin-top: 14px; }
+
+/* Kontakte sortieren, Abschnitte und ungeprüfte Kontakte (ansicht_kontakte.js) */
+.kontakte-sort-zeile { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.kontakte-sort-zeile .kontakt-suche { flex: 1 1 260px; min-width: 0; }
+.kontakte-sort {
+  position: relative; display: inline-flex; align-items: center; flex: 0 0 auto; gap: 8px;
+  min-height: 44px; padding: 0 16px 0 14px; border: 1px solid var(--glas-kante); border-radius: 999px;
+  background: var(--glas-stark); color: var(--text-2);
+  box-shadow: inset 0 1px 0 var(--glas-kante), 0 4px 14px rgba(40, 20, 20, .10);
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+}
+.kontakte-sort:has(select:focus-visible) { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.kontakte-sort-name { font-size: .8125rem; font-weight: 600; white-space: nowrap; }
+.kontakte-sort select {
+  appearance: none; -webkit-appearance: none; min-height: 42px; margin: 0; padding: 0;
+  border: 0; background: transparent; color: var(--text); font: inherit; font-size: 16px; font-weight: 600;
+  cursor: pointer;
+}
+.kontakte-sort select:focus-visible { outline: none; }
+.kontakte-sort::after {
+  content: ""; flex: none; width: 6px; height: 6px; margin: -3px 0 0 2px;
+  border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+  transform: rotate(45deg); pointer-events: none;
+}
+.kontakte-sort-abschnitt { margin: 0 0 18px; }
+.kontakte-sort-kopf {
+  position: sticky; top: var(--kontakte-sort-oben, 0px); z-index: 5; margin: 0 0 8px; padding: 6px 14px;
+  border: 1px solid var(--glas-kante); border-radius: 999px;
+  background: var(--glas-stark); color: var(--text-2);
+  font-size: .8125rem; font-weight: 600; line-height: 1.3;
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+}
+.kontakte-sort-liste { list-style: none; margin: 0; padding: 0; }
+.kontakte-sort-liste > li + li { border-top: 1px solid var(--linie); }
+.kontakte-sort-liste .liste-zeile { border-top: 0; }
+.kontakte-sort-hinweis {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%;
+  margin: 0 0 14px; padding: 12px 16px; border: 0; border-radius: 14px;
+  background: var(--tint); color: var(--tint-text); font: inherit; text-align: left; cursor: pointer;
+}
+.kontakte-sort-hinweis[hidden] { display: none; }
+.kontakte-sort-hinweis:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.kontakte-sort-hinweis-titel { font-size: 1rem; font-weight: 600; }
+.kontakte-sort-hinweis-unter { font-size: .875rem; }
+.kontakte-sort-ungeprueft { font-size: .875rem; color: var(--text-2); white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) {
+  .kontakte-sort-hinweis { transition: transform .2s var(--feder); }
+  .kontakte-sort-hinweis:active { transform: scale(.99); }
+}
+
+/* Kontakt-Seite (kontakt_sheet.js, kontaktSeiteZeichnen): bildschirmfüllend wie die Kontakte-Ansicht in iOS.
+   Die Reiterleiste und das Zahnrad verschwinden, solange die Seite offen ist. */
+body:has(.kontakt-seite) .navi,
+body:has(.kontakt-seite) .zahnrad { display: none; }
+.kontakt-seite {
+  position: fixed; inset: 0; z-index: 15; overflow-y: auto; overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch; padding-bottom: calc(env(safe-area-inset-bottom) + 40px);
+  color: var(--text);
+}
+.kontakt-seite-kopf {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  min-height: 56px; padding: calc(env(safe-area-inset-top) + 6px) 16px 6px;
+  background: var(--glas-stark); border-bottom: 1px solid var(--glas-kante);
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+}
+.kontakt-seite-zurueck,
+.kontakt-seite-kopf-knopf {
+  display: inline-flex; align-items: center; gap: 2px; min-height: 44px; margin: 0; padding: 0 4px;
+  border: 0; background: transparent; color: var(--akzent-schrift); font: inherit; font-size: 1.0625rem; font-weight: 500;
+  text-decoration: none; white-space: nowrap; cursor: pointer;
+}
+.kontakt-seite-kopf-knopf { font-weight: 600; }
+.kontakt-seite-zurueck > span:first-child { font-size: 1.5rem; line-height: 1; margin-top: -2px; }
+.kontakt-seite-zurueck:focus-visible,
+.kontakt-seite-kopf-knopf:focus-visible,
+.kontakt-seite-aktion:focus-visible,
+.kontakt-seite-loeschen:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.kontakt-seite-inhalt {
+  display: flex; flex-direction: column; gap: 24px; max-width: 640px; margin: 0 auto; padding: 24px 16px 0;
+}
+.kontakt-seite h1 { font-size: 1.75rem; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; overflow-wrap: anywhere; }
+.kontakt-seite h1:focus { outline: none; }
+.kontakt-seite-namen { display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; }
+.kontakt-seite-zeile { font-size: 1rem; color: var(--text-2); overflow-wrap: anywhere; }
+.kontakt-seite-firma { font-size: 1.0625rem; font-weight: 600; color: var(--text); }
+.kontakt-seite-aktionen { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px 22px; }
+.kontakt-seite-aktion {
+  display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 76px; margin: 0; padding: 0;
+  border: 0; background: transparent; color: var(--akzent-schrift); font: inherit; text-decoration: none; cursor: pointer;
+}
+.kontakt-seite-rund {
+  display: flex; align-items: center; justify-content: center; width: 60px; height: 60px; border-radius: 50%;
+  background: var(--karte); border: 1px solid var(--linie); box-shadow: var(--karte-schatten);
+}
+.kontakt-seite-symbol {
+  width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round;
+}
+.kontakt-seite-aktion-text { font-size: .8125rem; font-weight: 500; line-height: 1.2; color: var(--text); text-align: center; }
+.kontakt-seite .kontakt-status { text-align: center; }
+.kontakt-seite-abschnitt { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.kontakt-seite-ueberschrift { padding: 0 18px; font-size: .8125rem; font-weight: 600; color: var(--text-2); }
+.kontakt-seite-karte {
+  margin: 0; overflow: hidden; background: var(--karte); border: 1px solid var(--linie);
+  border-radius: var(--r-karte); box-shadow: var(--karte-schatten);
+}
+.kontakt-seite-angabe {
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; min-height: 48px; margin: 0; padding: 12px 18px;
+}
+.kontakt-seite-angabe + .kontakt-seite-angabe { border-top: 1px solid var(--linie); }
+.kontakt-seite-angabe dt { flex: none; margin: 0; font-size: 1rem; color: var(--text); }
+.kontakt-seite-angabe dd { margin: 0; min-width: 0; text-align: right; font-size: 1rem; font-weight: 500; color: var(--text); overflow-wrap: break-word; }
+.kontakt-seite-angabe dd a { color: var(--akzent-schrift); text-decoration: none; }
+.kontakt-seite-angabe dd a:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 4px; }
+.kontakt-seite-text { padding: 12px 18px; font-size: 1rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.kontakt-seite-text .notiz { font-size: 1rem; color: var(--text); }
+.kontakt-seite-fotos { padding: 14px 18px; }
+.kontakt-seite-loeschen {
+  display: block; width: 100%; min-height: 52px; margin: 0; padding: 0 18px; border: 0; border-radius: var(--r-karte);
+  background: var(--karte); box-shadow: var(--karte-schatten); color: var(--gefahr); font: inherit; font-size: 1rem;
+  font-weight: 600; text-align: center; cursor: pointer;
+}
+.kontakt-seite .kontakt-loeschen { align-items: stretch; }
+.kontakt-seite .kontakt-loeschen .kontakt-fuss { justify-content: stretch; }
+.kontakt-seite .kontakt-loeschen .kontakt-fuss .knopf { flex: 1 1 0; }
+.kontakt-seite-fehlt { font-size: 1rem; text-align: center; }
+@media (prefers-reduced-motion: no-preference) {
+  .kontakt-seite-aktion .kontakt-seite-rund { transition: transform 120ms ease-out; }
+  .kontakt-seite-aktion:active .kontakt-seite-rund { transform: scale(.96); }
+  .kontakt-seite-loeschen { transition: transform 120ms ease-out; }
+  .kontakt-seite-loeschen:active { transform: scale(.99); }
+}

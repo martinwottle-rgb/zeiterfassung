@@ -3,7 +3,7 @@ import { alle, einstellungenLaden, einstellungenSpeichern, exportieren } from '.
 import * as speicher from './speicher.js'; // bildLaden kommt aus speicher.js, wird zur Laufzeit geprüft (typeof)
 import { heute, jetztMinuten } from './zeit.js';
 import { mitternachtPruefen } from './stempeln.js';
-import { abgleichen, einrichtungLaden } from './abgleich.js';
+import { abgleichen, bildHolen, einrichtungLaden } from './abgleich.js';
 import { abwesenheitAm, sollMinuten, stempelZustand } from './rechnen.js';
 
 const ANSICHTEN = ['heute', 'woche', 'monat', 'abwesenheiten', 'reisen', 'belege', 'kontakte', 'einstellungen'];
@@ -46,6 +46,20 @@ let sheetOffen = false;
 let fokusVorher = null;
 let ausblendTimer = null;
 let ausblendEnde = null;
+let geaendert = false; // seit dem Öffnen hat ein Feld im Sheet eine Änderung gemeldet
+let ohneRueckfrage = false; // die Ansicht hat {ohneRueckfrage: true} übergeben
+let rueckfrageEl = null; // offene Rückfrage „Änderungen verwerfen?“
+let sheetKopf = null; // Kopfzeile mit Titel und Schließen-Knopf
+let sheetZug = null; // eine Wischbewegung am Sheet: { id, x, y, imKopf, zieht, offset, verlauf }
+
+const SHEET_KOPF_HOEHE = 64; // oberste Pixel des Sheets: dort wischt man immer
+const SHEET_WEG_ANTEIL = 0.25; // ab diesem Anteil der Höhe schließt das Sheet beim Loslassen
+const SHEET_TEMPO = 0.5; // px/ms nach unten: schließt das Sheet auch bei kurzem Weg
+const SHEET_EINGABE = 'input, select, textarea, [contenteditable]:not([contenteditable="false"])';
+
+function bewegungReduziert() {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
 
 function fokussierbare() {
   return [...sheetEl.querySelectorAll(
@@ -61,14 +75,99 @@ function ausblendenAbbrechen() {
   ausblendEnde = null;
 }
 
-function oeffnen(titel, element) {
+// Stile vom Wischen entfernen: die Klassen (.offen) bestimmen dann wieder Lage und Übergang
+function gestenStilLeeren() {
+  sheetEl.style.transition = '';
+  sheetEl.style.transform = '';
+  hintergrund.style.transition = '';
+  hintergrund.style.opacity = '';
+}
+
+function rueckfrageWeg() {
+  rueckfrageEl?.remove();
+  rueckfrageEl = null;
+}
+
+// Rückfrage im Sheet, direkt unter der Kopfzeile. „Weiter bearbeiten“ hat den Fokus.
+function rueckfrageZeigen() {
+  if (rueckfrageEl || !sheetKopf) return;
+  const box = document.createElement('div');
+  box.className = 'sheet-rueckfrage';
+  box.setAttribute('role', 'alertdialog');
+  box.setAttribute('aria-labelledby', 'sheet-rueckfrage-text');
+
+  const text = document.createElement('p');
+  text.id = 'sheet-rueckfrage-text';
+  text.className = 'sheet-rueckfrage-text';
+  text.textContent = 'Änderungen verwerfen?';
+
+  const knoepfe = document.createElement('div');
+  knoepfe.className = 'sheet-rueckfrage-knoepfe';
+
+  const verwerfen = document.createElement('button');
+  verwerfen.type = 'button';
+  verwerfen.className = 'knopf gefahr';
+  verwerfen.textContent = 'Verwerfen';
+  verwerfen.addEventListener('click', () => {
+    geaendert = false;
+    rueckfrageWeg();
+    schliessen();
+  });
+
+  const weiter = document.createElement('button');
+  weiter.type = 'button';
+  weiter.className = 'knopf haupt';
+  weiter.textContent = 'Weiter bearbeiten';
+  weiter.addEventListener('click', () => {
+    rueckfrageWeg();
+    (sheetEl.querySelector('input:not([type="hidden"]), select, textarea') ?? sheetEl).focus({ preventScroll: true });
+  });
+
+  knoepfe.append(verwerfen, weiter);
+  box.append(text, knoepfe);
+  sheetKopf.after(box);
+  rueckfrageEl = box;
+  sheetEl.scrollTop = 0; // die Frage soll oben sichtbar sein
+  weiter.focus({ preventScroll: true });
+}
+
+// Schließen durch den Nutzer (×, Escape, Hintergrund, Wischen): bei ungesicherten Änderungen erst fragen
+function nutzerSchliessen() {
+  if (!sheetOffen) return;
+  if (geaendert && !ohneRueckfrage) rueckfrageZeigen();
+  else schliessen();
+}
+
+// × und Escape: offene Rückfrage schließt nur die Rückfrage, sonst das Sheet (mit Nachfrage)
+function kreuzGedrueckt() {
+  if (rueckfrageEl) rueckfrageWeg();
+  else nutzerSchliessen();
+}
+
+function oeffnen(titel, element, optionen = {}) {
   if (!sheetOffen) fokusVorher = document.activeElement;
   ausblendenAbbrechen();
+  rueckfrageWeg();
+  gestenStilLeeren();
+  geaendert = false;
+  ohneRueckfrage = optionen.ohneRueckfrage === true;
 
   const titelZeile = document.createElement('h2');
   titelZeile.id = 'sheet-titel';
   titelZeile.textContent = titel;
-  sheetEl.replaceChildren(titelZeile, element);
+
+  const schliessenKnopf = document.createElement('button');
+  schliessenKnopf.type = 'button';
+  schliessenKnopf.className = 'sheet-schliessen';
+  schliessenKnopf.setAttribute('aria-label', 'Schließen');
+  schliessenKnopf.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+  schliessenKnopf.addEventListener('click', kreuzGedrueckt);
+
+  sheetKopf = document.createElement('div');
+  sheetKopf.className = 'sheet-kopf';
+  sheetKopf.append(titelZeile, schliessenKnopf);
+
+  sheetEl.replaceChildren(sheetKopf, element);
   sheetEl.setAttribute('aria-labelledby', 'sheet-titel');
   sheetEl.tabIndex = -1;
 
@@ -93,6 +192,7 @@ function oeffnen(titel, element) {
   });
 }
 
+// Schließt ohne Nachfrage. Die Ansicht ruft das selbst auf (nach dem Sichern), Abbrechen ebenso.
 function schliessen() {
   if (!sheetOffen) return;
   sheetOffen = false;
@@ -110,6 +210,9 @@ function schliessen() {
       hintergrund.hidden = true;
       sheetEl.hidden = true;
       sheetEl.replaceChildren();
+      sheetKopf = null;
+      rueckfrageEl = null;
+      gestenStilLeeren();
     }
   };
   ausblendEnde = (e) => {
@@ -128,7 +231,7 @@ function tasteImSheet(e) {
   if (!sheetOffen) return;
   if (e.key === 'Escape') {
     e.preventDefault();
-    schliessen();
+    kreuzGedrueckt();
     return;
   }
   if (e.key !== 'Tab') return;
@@ -152,7 +255,95 @@ function tasteImSheet(e) {
 }
 
 document.addEventListener('keydown', tasteImSheet);
-hintergrund.addEventListener('click', schliessen);
+hintergrund.addEventListener('click', () => {
+  if (!rueckfrageEl) nutzerSchliessen();
+});
+
+// Ungesicherte Änderungen: jede Eingabe im Sheet merkt sich das
+function aenderungMelden() {
+  geaendert = true;
+}
+sheetEl.addEventListener('input', aenderungMelden);
+sheetEl.addEventListener('change', aenderungMelden);
+
+// Herunterziehen zum Schließen (iOS-Stil). Touch Events, weil iOS Pointer Events bei eigenem Scrollen abbricht.
+// Verlauf für die Geschwindigkeit beim Loslassen: { y, t } in px und ms.
+function geschwindigkeit(verlauf) {
+  if (verlauf.length < 2) return 0;
+  const jetzt = verlauf[verlauf.length - 1];
+  const alt = verlauf.find((p) => jetzt.t - p.t <= 100) ?? verlauf[verlauf.length - 2];
+  const dt = jetzt.t - alt.t;
+  return dt > 0 ? (jetzt.y - alt.y) / dt : 0;
+}
+
+sheetEl.addEventListener('touchstart', (e) => {
+  if (sheetZug && e.touches.length === 1) sheetZug = null; // hängengebliebene Geste (Ende nicht gemeldet): verwerfen
+  if (!sheetOffen || e.touches.length !== 1 || sheetZug) return;
+  if (e.target.closest?.(SHEET_EINGABE)) return; // Eingabefelder, Auswahl, Textbereiche: nie wischen
+  const t = e.touches[0];
+  const imKopf = t.clientY - sheetEl.getBoundingClientRect().top <= SHEET_KOPF_HOEHE;
+  if (!imKopf && sheetEl.scrollTop > 0) return; // der Inhalt scrollt noch
+  sheetZug = { id: t.identifier, x: t.clientX, y: t.clientY, imKopf, zieht: false, offset: 0, verlauf: [] };
+}, { passive: true });
+
+sheetEl.addEventListener('touchmove', (e) => {
+  const z = sheetZug;
+  if (!z) return;
+  const t = [...e.changedTouches].find((c) => c.identifier === z.id);
+  if (!t) return;
+  const dx = t.clientX - z.x;
+  const dy = t.clientY - z.y;
+
+  if (!z.zieht) {
+    if (!z.imKopf && sheetEl.scrollTop > 0) { sheetZug = null; return; } // der Inhalt hat zu scrollen begonnen
+    if (Math.abs(dx) > 8 && Math.abs(dx) > Math.abs(dy)) { sheetZug = null; return; } // waagerecht: nicht übernehmen
+    if (dy <= 6) return; // kleine Bewegung oder nach oben: normales Scrollen
+    z.zieht = true;
+    sheetEl.style.transition = 'none';
+    hintergrund.style.transition = 'none';
+  }
+  if (Math.abs(dx) > Math.abs(dy)) { // während des Ziehens seitlich: abbrechen und zurückfedern
+    sheetZug = null;
+    gestenStilLeeren();
+    return;
+  }
+
+  e.preventDefault(); // das Sheet folgt dem Finger, der Inhalt scrollt nicht mit
+  z.offset = Math.max(0, dy);
+  z.verlauf.push({ y: t.clientY, t: performance.now() });
+  if (z.verlauf.length > 12) z.verlauf.shift();
+  if (!bewegungReduziert()) {
+    const hoehe = sheetEl.offsetHeight || 1;
+    sheetEl.style.transform = `translateY(${z.offset}px)`;
+    hintergrund.style.opacity = String(Math.max(0, 1 - z.offset / hoehe));
+  }
+}, { passive: false });
+
+// Loslassen: weit genug oder schnell nach unten schließt das Sheet, sonst federt es zurück
+function sheetZiehEnde(e) {
+  const z = sheetZug;
+  if (!z || (e.touches && e.touches.length > 0)) return;
+  sheetZug = null;
+  if (!z.zieht) return;
+  const hoehe = sheetEl.offsetHeight || 1;
+  const weit = z.offset > hoehe * SHEET_WEG_ANTEIL;
+  const schnell = geschwindigkeit(z.verlauf) > SHEET_TEMPO;
+  const schliessenJa = e.type === 'touchend' && z.offset > 0 && (weit || schnell);
+  if (!schliessenJa || rueckfrageEl) {
+    gestenStilLeeren(); // federt über die Klasse .sheet zurück
+    return;
+  }
+  if (geaendert && !ohneRueckfrage) {
+    gestenStilLeeren();
+    rueckfrageZeigen();
+    return;
+  }
+  // Weiter nach unten gleiten: gestenStilLeeren löst die Lage, schliessen() setzt translateY(100%)
+  gestenStilLeeren();
+  schliessen();
+}
+sheetEl.addEventListener('touchend', sheetZiehEnde);
+sheetEl.addEventListener('touchcancel', sheetZiehEnde);
 
 const sheet = { oeffnen, schliessen };
 
@@ -434,12 +625,21 @@ function blobAlsBase64(blob) {
   });
 }
 
-// Bilder für den Versand: { id: {name, daten} }. Null, wenn ein Bild lokal noch fehlt (der Kontakt wartet).
+// Bilder für den Versand: { id: {name, daten} }. Null, wenn ein Bild noch fehlt (der Kontakt wartet).
+// Fehlt es lokal (Kontakt vom iPhone über den Abgleich), wird es von GitHub geholt. Liefert auch das
+// nichts (iPhone hat es noch nicht hochgeladen) oder schlägt das Holen fehl, bleibt der Kontakt offen.
 async function outlookBilder(k) {
   const bilder = {};
   for (const { id, name } of kontaktBildIds(k)) {
-    if (typeof speicher.bildLaden !== 'function') return null;
-    const blob = await speicher.bildLaden(id);
+    let blob = typeof speicher.bildLaden === 'function' ? await speicher.bildLaden(id) : null;
+    if (!blob) {
+      try {
+        blob = await bildHolen(id, einrichtungLaden());
+      } catch (e) {
+        console.warn('Bild nicht geholt, Kontakt wartet', e?.message);
+        return null;
+      }
+    }
     if (!blob) return null;
     bilder[id] = { name, daten: await blobAlsBase64(blob) };
   }
@@ -455,13 +655,18 @@ async function outlookLauf() {
     console.error(e);
     return;
   }
-  const offen = kontakte.filter((k) => !k.geloescht && (!k.outlook || k.outlook.status === 'offen'));
+  // Nur von Martin geprüfte Kontakte (geprueft === true) gehen an Outlook
+  const offen = kontakte.filter((k) => !k.geloescht && k.geprueft === true && (!k.outlook || k.outlook.status === 'offen'));
   for (const k of offen) {
     let antwort;
     try {
       const bilder = await outlookBilder(k);
       if (!bilder) continue;
-      const { outlook, ...kontakt } = k;
+      // Eigener Kontakt (vorher angelegt oder aktualisiert, EntryID bekannt): der Server überschreibt ihn.
+      // Der Server reicht nur kontakt und bilder weiter, daher stehen eigen und entry_id im kontakt.
+      const { outlook, ...rest } = k;
+      const eigen = Boolean(outlook?.entryId) && ['angelegt', 'aktualisiert'].includes(outlook?.vorher);
+      const kontakt = eigen ? { ...rest, eigen: true, entry_id: outlook.entryId } : rest;
       const antwortRoh = await fetch('/api/outlook-kontakt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

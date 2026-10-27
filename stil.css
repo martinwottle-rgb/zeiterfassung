@@ -932,3 +932,50 @@ a.segment-teil:focus-visible { outline: 2px solid var(--akzent); outline-offset:
 
 /* Der Inhaltsbereich bekommt beim Ansichtswechsel den Fokus (für VoiceOver); ein Rahmen darum hilft niemandem */
 #ansicht:focus, #ansicht:focus-visible { outline: none; }
+
+/* Erkennung: Quelle, Anleitung, Hinweis „bitte prüfen“ (nie kleiner als 12 px) */
+.kontakt-quelle { font-weight: 600; color: var(--text); }
+.kontakt-quelle[hidden], .kontakt-anleitung[hidden], .kontakt-unsicher-hinweis[hidden] { display: none; }
+.kontakt-anleitung { color: var(--text); margin: 0; }
+.kontakt-unsicher-hinweis { margin: -2px 0 0; font-size: .8125rem; font-weight: 600; color: var(--warnung); }
+.kontakt-form .kontakt-unsicher input:not([type="checkbox"]):not([type="file"]) { border-color: var(--warnung); }
+
+/* Sheet: Kopfzeile mit Titel und Schließen-Knopf (bleibt beim Scrollen oben stehen) */
+.sheet-kopf {
+  position: sticky; top: 0; z-index: 3;
+  display: flex; align-items: center; gap: 12px;
+  margin: 0 -20px 8px; padding: 0 20px 8px;
+  background: var(--glas-stark);
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+}
+.sheet-kopf h2 { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+
+/* Schließen-Knopf: runder Glasknopf, 44 × 44 px */
+.sheet-schliessen {
+  flex: none; display: grid; place-items: center;
+  width: 44px; height: 44px; margin: 0; padding: 0;
+  border: 1px solid var(--glas-kante); border-radius: 999px;
+  background: var(--glas); color: var(--text); cursor: pointer;
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+  box-shadow: inset 0 1px 0 var(--glas-kante), 0 2px 8px rgba(40, 20, 20, .08);
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 120ms var(--feder);
+}
+.sheet-schliessen svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+.sheet-schliessen:active { transform: scale(.94); }
+.sheet-schliessen:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .sheet-schliessen { transition: none; }
+  .sheet-schliessen:active { transform: none; }
+}
+
+/* Rückfrage bei ungesicherten Änderungen: Verwerfen oder Weiter bearbeiten */
+.sheet-rueckfrage {
+  display: flex; flex-direction: column; gap: 12px;
+  margin: 0 0 16px; padding: 16px;
+  border: 1px solid var(--linie); border-radius: var(--r-karte);
+  background: var(--karte); box-shadow: var(--karte-schatten);
+}
+.sheet-rueckfrage-text { font-size: 1.0625rem; font-weight: 600; color: var(--text); }
+.sheet-rueckfrage-knoepfe { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.sheet-rueckfrage-knoepfe .knopf { width: 100%; padding: 0 12px; white-space: normal; }

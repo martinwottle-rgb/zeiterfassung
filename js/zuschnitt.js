@@ -204,6 +204,195 @@ function startEcken() {
   ];
 }
 
+function vierecFlaeche(p) {
+  let summe = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = p[i];
+    const b = p[(i + 1) % 4];
+    summe += a.x * b.y - b.x * a.y;
+  }
+  return Math.abs(summe) / 2;
+}
+
+// Visitenkarte im Bild suchen. Liefert vier Punkte {x, y} in Pixeln von imageData
+// (oben links, oben rechts, unten rechts, unten links) oder null.
+// Ablauf: auf etwa KARTE_BREITE Pixel verkleinern, Graustufen, 3×3-Weichzeichnung,
+// Otsu-Schwelle auf der Helligkeit (die Karte ist meist heller als der Tisch),
+// größte helle Fläche, die den Rand nicht berührt. Ihre Ecken sind die Extrempunkte
+// in den Richtungen x+y und x−y (das ist die konvexe Hülle in den Diagonalrichtungen).
+// Plausibel sind Fläche 15 % bis 95 % des Bildes und Seitenverhältnis 1,2 bis 2,2.
+const KARTE_BREITE = 400;
+const KARTE_FLAECHE = [0.15, 0.95];
+const KARTE_SEITEN = [1.2, 2.2];
+
+export function karteFinden(imageData) {
+  const w0 = imageData.width;
+  const h0 = imageData.height;
+  if (!w0 || !h0) return null;
+  const f = Math.min(1, KARTE_BREITE / w0);
+  const w = Math.max(1, Math.round(w0 * f));
+  const h = Math.max(1, Math.round(h0 * f));
+  const sx = w0 / w;
+  const sy = h0 / h;
+  const d = imageData.data;
+  const n = w * h;
+
+  // Graustufen, verkleinert durch Mittelung der Quellblöcke
+  const grau = new Float32Array(n);
+  for (let y = 0; y < h; y++) {
+    const ya = Math.floor(y * sy);
+    const yb = Math.max(ya + 1, Math.min(h0, Math.floor((y + 1) * sy)));
+    for (let x = 0; x < w; x++) {
+      const xa = Math.floor(x * sx);
+      const xb = Math.max(xa + 1, Math.min(w0, Math.floor((x + 1) * sx)));
+      let summe = 0;
+      let anzahl = 0;
+      for (let yy = ya; yy < yb; yy++) {
+        for (let xx = xa; xx < xb; xx++) {
+          const i = (yy * w0 + xx) * 4;
+          summe += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+          anzahl++;
+        }
+      }
+      grau[y * w + x] = summe / anzahl;
+    }
+  }
+
+  // 3×3-Weichzeichnung (getrennt, Binomialkern 1-2-1)
+  const quer = new Float32Array(n);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const l = y * w + Math.max(x - 1, 0);
+      const r = y * w + Math.min(x + 1, w - 1);
+      quer[y * w + x] = (grau[l] + 2 * grau[y * w + x] + grau[r]) / 4;
+    }
+  }
+  const weich = new Float32Array(n);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const o = Math.max(y - 1, 0) * w + x;
+      const u = Math.min(y + 1, h - 1) * w + x;
+      weich[y * w + x] = (quer[o] + 2 * quer[y * w + x] + quer[u]) / 4;
+    }
+  }
+
+  // Otsu-Schwelle auf der Helligkeit: maximale Varianz zwischen den Klassen
+  const stufen = new Uint8Array(n);
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < n; i++) {
+    const v = Math.min(255, Math.max(0, Math.round(weich[i])));
+    stufen[i] = v;
+    hist[v]++;
+  }
+  let summeAlle = 0;
+  for (let v = 0; v < 256; v++) summeAlle += v * hist[v];
+  let wDunkel = 0;
+  let summeDunkel = 0;
+  let besteVarianz = -1;
+  let schwelle = 128;
+  for (let t = 0; t < 256; t++) {
+    wDunkel += hist[t];
+    if (!wDunkel) continue;
+    const wHell = n - wDunkel;
+    if (!wHell) break;
+    summeDunkel += t * hist[t];
+    const mDunkel = summeDunkel / wDunkel;
+    const mHell = (summeAlle - summeDunkel) / wHell;
+    const varianz = wDunkel * wHell * (mDunkel - mHell) * (mDunkel - mHell);
+    if (varianz > besteVarianz) {
+      besteVarianz = varianz;
+      schwelle = t;
+    }
+  }
+  const maske = new Uint8Array(n);
+  for (let i = 0; i < n; i++) maske[i] = stufen[i] > schwelle ? 1 : 0;
+
+  // Zusammenhängende helle Flächen (4er-Nachbarschaft), die den Bildrand nicht berühren.
+  // Pro Fläche werden die Extrempunkte in den vier Diagonalrichtungen mitgeführt.
+  const gesehen = new Uint8Array(n);
+  const stapel = new Int32Array(n);
+  let beste = null;
+  for (let start = 0; start < n; start++) {
+    if (!maske[start] || gesehen[start]) continue;
+    let sp = 0;
+    const dranschieben = (q) => {
+      if (maske[q] && !gesehen[q]) {
+        gesehen[q] = 1;
+        stapel[sp++] = q;
+      }
+    };
+    dranschieben(start);
+    let flaeche = 0;
+    let amRand = false;
+    let minS = Infinity;
+    let maxS = -Infinity;
+    let maxD = -Infinity;
+    let minD = Infinity;
+    let tl = null;
+    let br = null;
+    let tr = null;
+    let bl = null;
+    while (sp > 0) {
+      const p = stapel[--sp];
+      const y = Math.floor(p / w);
+      const x = p - y * w;
+      flaeche++;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) amRand = true;
+      const s = x + y;
+      const df = x - y;
+      if (s < minS) { minS = s; tl = { x, y }; }
+      if (s > maxS) { maxS = s; br = { x, y }; }
+      if (df > maxD) { maxD = df; tr = { x, y }; }
+      if (df < minD) { minD = df; bl = { x, y }; }
+      if (x > 0) dranschieben(p - 1);
+      if (x < w - 1) dranschieben(p + 1);
+      if (y > 0) dranschieben(p - w);
+      if (y < h - 1) dranschieben(p + w);
+    }
+    if (!amRand && (!beste || flaeche > beste.flaeche)) {
+      beste = { flaeche, ecken: [tl, tr, br, bl] };
+    }
+  }
+  if (!beste) return null;
+
+  // Plausibilität: Fläche, Konvexität, Seitenverhältnis
+  const ecken = beste.ecken;
+  const anteil = vierecFlaeche(ecken) / n;
+  if (anteil < KARTE_FLAECHE[0] || anteil > KARTE_FLAECHE[1]) return null;
+  let vorzeichen = 0;
+  for (let i = 0; i < 4; i++) {
+    const a = ecken[i];
+    const b = ecken[(i + 1) % 4];
+    const c = ecken[(i + 2) % 4];
+    const kreuz = (b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x);
+    if (Math.abs(kreuz) < 1e-9) return null;
+    const s = Math.sign(kreuz);
+    if (vorzeichen && s !== vorzeichen) return null;
+    vorzeichen = s;
+  }
+  const [tlE, trE, brE, blE] = ecken;
+  const laenge = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+  const breite = (laenge(tlE, trE) + laenge(blE, brE)) / 2;
+  const hoehe = (laenge(tlE, blE) + laenge(trE, brE)) / 2;
+  const seiten = Math.max(breite, hoehe) / Math.min(breite, hoehe);
+  if (!(seiten >= KARTE_SEITEN[0] && seiten <= KARTE_SEITEN[1])) return null;
+
+  // Zurück auf die Originalkoordinaten (Mitte des Quellblocks)
+  return ecken.map((p) => ({ x: (p.x + 0.5) * sx - 0.5, y: (p.y + 0.5) * sy - 0.5 }));
+}
+
+// Startecken für das Sheet: erkannte Karte, sonst 4 % Rand
+function startEckenFuer(leinwand) {
+  let punkte = null;
+  try {
+    punkte = karteFinden(leinwand.getContext('2d').getImageData(0, 0, leinwand.width, leinwand.height));
+  } catch {
+    punkte = null;
+  }
+  if (!punkte) return startEcken();
+  return punkte.map((p) => ({ x: p.x / leinwand.width, y: p.y / leinwand.height }));
+}
+
 // Öffnet das Zuschnitt-Sheet. Liefert ein JPEG-Blob, oder null, wenn abgebrochen wird.
 // Scheitert das Laden des Bildes, wird ein Fehler mit deutscher Meldung geworfen.
 export async function zuschneiden(datei, kontext) {
@@ -211,7 +400,7 @@ export async function zuschneiden(datei, kontext) {
 
   return new Promise((resolve) => {
     let leinwand = leinwand0;
-    let ecken = startEcken();
+    let ecken = startEckenFuer(leinwand);
     let kontrast = false;
     let beendet = false;
     let ziehend = null;
