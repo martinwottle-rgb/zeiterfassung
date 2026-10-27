@@ -2,23 +2,23 @@
    Glas nur auf der Bedienebene (Kopf, Navigation, Knöpfe, Sheet). Karten, Listen und Tabellen sind massiv. */
 
 :root {
-  --bg: #eef2f8;
-  --glow-1: rgba(10, 102, 216, .16);
-  --glow-2: rgba(120, 160, 255, .14);
+  --bg: #f6f4f3;
+  --glow-1: rgba(215, 38, 30, .10);
+  --glow-2: rgba(120, 110, 106, .12);
   --karte: #ffffff;
   --karte-schatten: 0 1px 2px rgba(0, 0, 0, .04), 0 6px 20px rgba(0, 0, 0, .05);
-  --text: #1c1c1e;
-  --text-2: #5c5c63;
-  --linie: rgba(0, 0, 0, .08);
-  --spur: rgba(10, 102, 216, .12);
-  --spur-zeit: rgba(120, 120, 128, .14);
-  --segment: rgba(120, 120, 128, .14);
-  --akzent: #0a66d8;
-  --akzent-schrift: #0a5bc2;
+  --text: #1c1a1a;
+  --text-2: #5f5856;
+  --linie: rgba(40, 20, 20, .09);
+  --spur: rgba(215, 38, 30, .12);
+  --spur-zeit: rgba(120, 110, 106, .16);
+  --segment: rgba(120, 110, 106, .16);
+  --akzent: #d7261e;
+  --akzent-schrift: #c4121a;
   --akzent-text: #ffffff;
-  --akzent-weich: rgba(10, 102, 216, .12);
-  --tint: #e4eefc;
-  --tint-text: #0b2140;
+  --akzent-weich: rgba(215, 38, 30, .12);
+  --tint: #f1e9e7;
+  --tint-text: #3a1412;
   --erfolg: #1e7b45;
   --warnung: #b35c00;
   --schalter-an: #34c759;
@@ -28,7 +28,7 @@
   --glas-stark: rgba(255, 255, 255, .74);
   --glas-kante: rgba(255, 255, 255, .85);
   --glas-unten: rgba(0, 0, 0, .05);
-  --glas-schatten: 0 12px 36px rgba(20, 40, 80, .14), 0 2px 6px rgba(20, 40, 80, .06);
+  --glas-schatten: 0 12px 36px rgba(40, 20, 20, .12), 0 2px 6px rgba(40, 20, 20, .06);
   --glas-filter: blur(24px) saturate(180%);
   --r-karte: 20px;
   --r-glas: 28px;
@@ -37,30 +37,30 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0a0c11;
-    --glow-1: rgba(77, 155, 255, .16);
-    --glow-2: rgba(130, 100, 255, .12);
-    --karte: #1c1e25;
+    --bg: #0c0b0b;
+    --glow-1: rgba(220, 50, 41, .14);
+    --glow-2: rgba(150, 140, 135, .10);
+    --karte: #1d1a1a;
     --karte-schatten: 0 1px 2px rgba(0, 0, 0, .4);
-    --text: #f2f2f7;
-    --text-2: #a4a4ad;
+    --text: #f5f2f1;
+    --text-2: #aca4a2;
     --linie: rgba(255, 255, 255, .10);
-    --spur: rgba(77, 155, 255, .18);
-    --spur-zeit: rgba(120, 120, 128, .24);
-    --segment: rgba(120, 120, 128, .24);
-    --akzent: #4d9bff;
-    --akzent-schrift: #7ab4ff;
-    --akzent-text: #06121f;
-    --akzent-weich: rgba(77, 155, 255, .18);
-    --tint: #16263d;
-    --tint-text: #eaf2ff;
+    --spur: rgba(220, 50, 41, .18);
+    --spur-zeit: rgba(150, 140, 135, .24);
+    --segment: rgba(150, 140, 135, .24);
+    --akzent: #dc3229;
+    --akzent-schrift: #ff8a80;
+    --akzent-text: #ffffff;
+    --akzent-weich: rgba(220, 50, 41, .16);
+    --tint: #2a2223;
+    --tint-text: #fbeeee;
     --erfolg: #4cd08a;
-  --warnung: #ffb066;
-  --schalter-an: #30d158;
+    --warnung: #ffb066;
+    --schalter-an: #30d158;
     --streifen-a: rgba(235, 235, 245, .30);
     --streifen-b: rgba(235, 235, 245, .08);
-    --glas: rgba(44, 46, 56, .55);
-    --glas-stark: rgba(44, 46, 56, .74);
+    --glas: rgba(44, 40, 40, .55);
+    --glas-stark: rgba(44, 40, 40, .74);
     --glas-kante: rgba(255, 255, 255, .22);
     --glas-unten: rgba(255, 255, 255, .04);
     --glas-schatten: 0 12px 36px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .35);
@@ -68,30 +68,30 @@
   }
 }
 :root[data-theme="dark"] {
-  --bg: #0a0c11;
-  --glow-1: rgba(77, 155, 255, .16);
-  --glow-2: rgba(130, 100, 255, .12);
-  --karte: #1c1e25;
+  --bg: #0c0b0b;
+  --glow-1: rgba(220, 50, 41, .14);
+  --glow-2: rgba(150, 140, 135, .10);
+  --karte: #1d1a1a;
   --karte-schatten: 0 1px 2px rgba(0, 0, 0, .4);
-  --text: #f2f2f7;
-  --text-2: #a4a4ad;
+  --text: #f5f2f1;
+  --text-2: #aca4a2;
   --linie: rgba(255, 255, 255, .10);
-  --spur: rgba(77, 155, 255, .18);
-  --spur-zeit: rgba(120, 120, 128, .24);
-  --segment: rgba(120, 120, 128, .24);
-  --akzent: #4d9bff;
-  --akzent-schrift: #7ab4ff;
-  --akzent-text: #06121f;
-  --akzent-weich: rgba(77, 155, 255, .18);
-  --tint: #16263d;
-  --tint-text: #eaf2ff;
+  --spur: rgba(220, 50, 41, .18);
+  --spur-zeit: rgba(150, 140, 135, .24);
+  --segment: rgba(150, 140, 135, .24);
+  --akzent: #dc3229;
+  --akzent-schrift: #ff8a80;
+  --akzent-text: #ffffff;
+  --akzent-weich: rgba(220, 50, 41, .16);
+  --tint: #2a2223;
+  --tint-text: #fbeeee;
   --erfolg: #4cd08a;
   --warnung: #ffb066;
   --schalter-an: #30d158;
   --streifen-a: rgba(235, 235, 245, .30);
   --streifen-b: rgba(235, 235, 245, .08);
-  --glas: rgba(44, 46, 56, .55);
-  --glas-stark: rgba(44, 46, 56, .74);
+  --glas: rgba(44, 40, 40, .55);
+  --glas-stark: rgba(44, 40, 40, .74);
   --glas-kante: rgba(255, 255, 255, .22);
   --glas-unten: rgba(255, 255, 255, .04);
   --glas-schatten: 0 12px 36px rgba(0, 0, 0, .5), 0 2px 6px rgba(0, 0, 0, .35);
@@ -182,13 +182,13 @@ ul { list-style: none; }
   border-radius: 999px; border: 1px solid var(--glas-kante); background: var(--glas-stark); color: var(--text);
   font: inherit; font-size: 1rem; font-weight: 600; cursor: pointer; text-align: center; white-space: nowrap;
   -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
-  box-shadow: inset 0 1px 0 var(--glas-kante), 0 4px 14px rgba(20, 40, 80, .10);
+  box-shadow: inset 0 1px 0 var(--glas-kante), 0 4px 14px rgba(40, 20, 20, .10);
   transition: transform 120ms ease-out;
 }
 .knopf:active { transform: scale(.97); }
 .knopf-haupt {
   background: var(--akzent); color: var(--akzent-text); border-color: transparent;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 6px 18px rgba(10, 102, 216, .26);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 6px 18px rgba(215, 38, 30, .26);
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 .knopf-gross { min-height: 56px; padding: 0 40px; font-size: 1.25rem; }
@@ -298,7 +298,7 @@ ul { list-style: none; }
     flex-direction: row; justify-content: flex-start; gap: 12px; min-height: 44px; padding: 10px 14px;
     border-radius: 14px; font-size: 1rem; color: var(--text);
   }
-  .navi .reiter[aria-current="page"] { background: var(--karte); color: var(--text); box-shadow: var(--karte-schatten); }
+  .navi .reiter[aria-current="page"] { background: var(--karte); color: var(--akzent-schrift); box-shadow: var(--karte-schatten); }
   .navi .reiter svg { width: 22px; height: 22px; }
 }
 
@@ -326,7 +326,7 @@ ul { list-style: none; }
 /* Knöpfe: Namen aus der Vorgabe, gleiche Optik wie oben */
 .knopf.haupt {
   background: var(--akzent); color: var(--akzent-text); border-color: transparent;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 6px 18px rgba(10, 102, 216, .26);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .35), 0 6px 18px rgba(215, 38, 30, .26);
   -webkit-backdrop-filter: none; backdrop-filter: none;
 }
 .knopf.gefahr { color: var(--gefahr); }
@@ -436,7 +436,7 @@ button.liste-zeile:active, a.liste-zeile:active { background: var(--spur); }
     font-size: 1rem; font-weight: 700; color: #000; margin-bottom: 4px;
   }
   .rahmen { padding: 0; }
-  .navi, .sheet, .sheet-hintergrund, .nicht-drucken, .knopf, .segment, .darstellung { display: none !important; }
+  .navi, .sheet, .sheet-hintergrund, .nicht-drucken, .knopf, .segment, .darstellung, .zahnrad { display: none !important; }
   *, *::before, *::after {
     background: transparent !important; color: #000 !important; box-shadow: none !important;
     text-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
@@ -736,11 +736,8 @@ input.tag-pause-eingabe { width: 12rem; max-width: 100%; margin-left: auto; text
 }
 
 
-/* Reiterleiste auf dem iPhone: sechs Reiter passen nur mit kurzen Beschriftungen (Vorlesen nutzt die lange) */
-.reiter .kurz { display: none; }
+/* Reiterleiste unter 600 px: fünf Reiter gleich breit */
 @media (max-width: 599px) {
-  .reiter .lang { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .reiter .kurz { display: inline; }
   .navi ul { justify-content: space-between; }
   .navi li { flex: 1 1 0; min-width: 0; }
   .navi .reiter { width: 100%; padding-inline: 2px; }
@@ -756,3 +753,179 @@ input.tag-pause-eingabe { width: 12rem; max-width: 100%; margin-left: auto; text
 .reise-nacht-symbol { flex: none; width: 20px; height: 20px; color: var(--text-2); }
 .reise-nacht-text { flex: 1 1 auto; min-width: 0; }
 .reise-nacht input[type="checkbox"][role="switch"] { flex: none; }
+
+/* Foto zuschneiden (zuschnitt.js): Sheet mit vier Ecken, Drehen, Kontrast, Abbrechen und Fertig */
+.zuschnitt { display: flex; flex-direction: column; gap: 14px; }
+.zuschnitt-hinweis { margin: 0; font-size: .9375rem; color: var(--text-2); }
+.zuschnitt-buehne {
+  position: relative; margin: 0 auto; max-width: 100%;
+  border-radius: 12px; overflow: hidden; background: var(--linie);
+  touch-action: none; user-select: none; -webkit-user-select: none;
+}
+.zuschnitt-leinwand { display: block; width: 100%; height: 100%; }
+.zuschnitt-leinwand.kontrast { filter: grayscale(1) contrast(1.4); }
+.zuschnitt-rahmen { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.zuschnitt-abdunklung { fill: rgba(0, 0, 0, .38); fill-rule: evenodd; }
+.zuschnitt-linie { fill: none; stroke: var(--akzent); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.zuschnitt-ecke {
+  position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; padding: 0; border: 0;
+  background: transparent; display: grid; place-items: center; cursor: grab;
+  touch-action: none; -webkit-tap-highlight-color: transparent;
+}
+.zuschnitt-ecke::before {
+  content: ""; width: 22px; height: 22px; border-radius: 50%;
+  background: var(--akzent); border: 3px solid #fff; box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+  transition: transform 180ms var(--feder);
+}
+.zuschnitt-ecke.zieht::before, .zuschnitt-ecke:active::before { transform: scale(1.15); }
+.zuschnitt-ecke:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 50%; }
+.zuschnitt-werkzeuge, .zuschnitt-aktionen { display: flex; flex-wrap: wrap; gap: 10px; }
+.zuschnitt-aktionen { justify-content: flex-end; }
+.zuschnitt-aktionen .zuschnitt-knopf { flex: 1 1 0; }
+.zuschnitt-knopf {
+  min-height: 44px; padding: 0 18px; border-radius: 999px;
+  border: 1px solid var(--linie); background: var(--karte); color: var(--text);
+  font: inherit; font-size: .9375rem; font-weight: 600; cursor: pointer;
+  transition: transform 160ms var(--feder);
+}
+.zuschnitt-knopf:active { transform: scale(.97); }
+.zuschnitt-knopf[aria-pressed="true"] { background: var(--akzent-weich); color: var(--akzent-schrift); border-color: transparent; }
+.zuschnitt-knopf-haupt { background: var(--akzent); color: var(--akzent-text); border-color: transparent; }
+.zuschnitt-knopf:disabled { opacity: .5; cursor: default; }
+.zuschnitt-status { margin: 0; min-height: 1.4em; font-size: .9375rem; color: var(--text-2); }
+.zuschnitt-status.fehler { color: var(--warnung); }
+@media (prefers-reduced-motion: reduce) {
+  .zuschnitt-ecke::before, .zuschnitt-knopf { transition: none; }
+}
+
+/* Zeit-Segment (Woche, Monat, Abwesenheiten): ganze Breite, aktiver Teil in Rot */
+.zeit-segment { display: flex; width: 100%; }
+.zeit-segment .segment-teil { flex: 1 1 0; min-width: 0; }
+.zeit-segment .segment-teil span { text-align: center; }
+a.segment-teil { text-decoration: none; color: inherit; }
+a.segment-teil:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-radius: 999px; }
+.segment-teil[aria-current="page"] > span { background: var(--karte); color: var(--akzent-schrift); box-shadow: 0 1px 3px rgba(0, 0, 0, .14); }
+
+/* Einstellungen: unter 900 px runder Glasknopf oben rechts, ab 900 px Eintrag unten in der Glas-Seitenleiste */
+.zahnrad {
+  position: fixed; z-index: 25; top: calc(env(safe-area-inset-top) + 12px); right: 16px;
+  width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; border: 1px solid var(--glas-kante); background: var(--glas-stark); color: var(--text);
+  -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
+  box-shadow: inset 0 1px 0 var(--glas-kante), 0 4px 14px rgba(40, 20, 20, .10);
+  text-decoration: none; transition: transform 120ms ease-out;
+}
+.zahnrad:active { transform: scale(.97); }
+.zahnrad svg { flex: none; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.zahnrad[aria-current="page"] { color: var(--akzent-schrift); }
+.zahnrad:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.zahnrad-text { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Unter 900 px: oben Platz für den Zahnrad-Knopf, der Kopf klebt darunter */
+@media (max-width: 899px) {
+  .rahmen { padding-top: calc(env(safe-area-inset-top) + 68px); }
+  .kopf { top: calc(env(safe-area-inset-top) + 68px); }
+}
+
+/* Ab 900 px: Eintrag unten in der Seitenleiste, Text sichtbar */
+@media (min-width: 900px) {
+  .zahnrad {
+    top: auto; right: auto; left: 26px; bottom: 34px; width: 208px; justify-content: flex-start;
+    gap: 12px; padding: 0 14px; border-radius: 14px; border: 0; background: transparent;
+    -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none;
+    font-size: 1rem; font-weight: 500;
+  }
+  .zahnrad-text { position: static; width: auto; height: auto; overflow: visible; clip: auto; white-space: normal; }
+  .zahnrad[aria-current="page"] { background: var(--karte); color: var(--akzent-schrift); box-shadow: var(--karte-schatten); }
+}
+
+/* Kontakte (ansicht_kontakte.js, kontakt_sheet.js): Suche, Liste, Outlook-Punkt, Formular, Detail, Fotos */
+.kontakt-suche { position: relative; }
+.kontakt-suche input[type="search"] {
+  display: block; width: 100%; min-width: 0; min-height: 44px; margin: 0; padding: 10px 16px;
+  border: 1px solid var(--linie); border-radius: 999px; background: var(--karte); color: var(--text);
+  font: inherit; font-size: 16px; line-height: 1.3; -webkit-appearance: none; appearance: none;
+}
+.kontakt-suche input[type="search"]::placeholder { color: var(--text-2); opacity: 1; }
+.kontakt-suche input[type="search"]:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-color: var(--akzent); }
+
+.kontakt-zeile { align-items: center; }
+.kontakt-zeile .liste-text { flex: 1 1 auto; }
+.kontakt-zeile .liste-unter { margin-top: 2px; }
+.kontakt-outlook { display: inline-flex; align-items: center; flex: none; margin-left: auto; }
+.kontakt-punkt { display: block; width: 10px; height: 10px; border-radius: 50%; background: var(--text-2); opacity: .55; }
+.kontakt-punkt.ok { background: var(--erfolg); opacity: 1; }
+.kontakt-punkt.fehler { background: var(--warnung); opacity: 1; }
+
+/* Formular im Sheet: zwei Felder nebeneinander ab 600 px */
+.kontakt-form input:not([type="checkbox"]):not([type="file"]) {
+  display: block; width: 100%; min-width: 0; min-height: 44px; margin: 0; padding: 10px 16px;
+  border: 1px solid var(--linie); border-radius: 999px; background: var(--karte); color: var(--text);
+  font: inherit; font-size: 16px; line-height: 1.3; -webkit-appearance: none; appearance: none;
+}
+.kontakt-form input:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; border-color: var(--akzent); }
+.kontakt-zwei { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+@media (min-width: 600px) {
+  .kontakt-zwei { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.kontakt-gruppe { display: flex; flex-direction: column; gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.kontakt-legende { padding: 0; margin: 0 0 4px; font-size: .9375rem; font-weight: 700; color: var(--text); }
+.kontakt-tipp { margin-top: -4px; }
+.kontakt-knopf-klein { align-self: flex-start; min-height: 40px; padding: 0 16px; font-size: .9375rem; }
+.kontakt-gruppe textarea { min-height: 112px; }
+.kontakt-datei { position: relative; align-self: flex-start; cursor: pointer; }
+.kontakt-datei:focus-within { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.kontakt-datei .nur-sr { pointer-events: none; }
+.kontakt-auswahl { display: flex; flex-direction: column; gap: 14px; }
+.kontakt-auswahl .knopf { width: 100%; }
+.kontakt-status { min-height: 1.4em; margin: 0; }
+.kontakt-status.fehler { color: var(--gefahr); }
+.kontakt-hinweis { padding: 12px 16px; border-radius: 14px; background: var(--tint); color: var(--tint-text); }
+.kontakt-gesamt { text-align: right; }
+.kontakt-fuss { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; margin-top: 4px; }
+.kontakt-fuss .knopf { flex: 0 1 auto; }
+
+/* Fotos: klein, Antippen vergrößert an Ort und Stelle */
+.kontakt-bilder { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 12px; }
+.kontakt-vorschau {
+  display: block; width: 128px; max-width: 100%; margin: 0; padding: 0; overflow: hidden; cursor: zoom-in;
+  border: 1px solid var(--linie); border-radius: 12px; background: var(--karte); box-shadow: var(--karte-schatten);
+  font: inherit; color: var(--text-2);
+}
+.kontakt-vorschau img { display: block; width: 100%; height: auto; }
+.kontakt-vorschau.gross { width: 100%; cursor: zoom-out; }
+.kontakt-vorschau:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.kontakt-platzhalter { display: block; padding: 18px 12px; font-size: .875rem; text-align: center; }
+
+/* Fortschritt der Texterkennung */
+.kontakt-fortschritt-huelle { display: flex; flex-direction: column; gap: 14px; }
+.kontakt-fortschritt-titel { font-size: 1rem; font-weight: 600; }
+.kontakt-fortschritt {
+  display: block; width: 100%; height: 12px; margin: 0; appearance: none; -webkit-appearance: none;
+  border: 0; border-radius: 999px; background: var(--segment); overflow: hidden;
+}
+.kontakt-fortschritt::-webkit-progress-bar { background: var(--segment); border-radius: 999px; }
+.kontakt-fortschritt::-webkit-progress-value { background: var(--akzent); border-radius: 999px; }
+.kontakt-fortschritt::-moz-progress-bar { background: var(--akzent); border-radius: 999px; }
+
+/* Detail */
+.kontakt-detail { display: flex; flex-direction: column; gap: 16px; }
+.kontakt-detail-kopf { display: flex; flex-direction: column; gap: 4px; }
+.kontakt-firma { font-size: 1.0625rem; font-weight: 600; }
+.kontakt-aktionen { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.kontakt-aktionen .knopf { width: 100%; padding: 0 12px; }
+.kontakt-aktionen .kontakt-breit { grid-column: 1 / -1; }
+.kontakt-angaben { margin: 0; overflow: hidden; }
+.kontakt-angabe {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 16px;
+  min-height: 52px; padding: 10px 20px; border-top: 1px solid var(--linie);
+}
+.kontakt-angabe:first-child { border-top: 0; }
+.kontakt-angabe dt { flex: none; font-size: .875rem; color: var(--text-2); }
+.kontakt-angabe dd { margin: 0; min-width: 0; text-align: right; font-weight: 600; overflow-wrap: anywhere; }
+.kontakt-block { display: flex; flex-direction: column; gap: 10px; }
+.kontakt-block h2 { margin-bottom: 0; }
+.kontakt-notiz-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.kontakt-loeschen { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
+.kontakt-loeschen[hidden] { display: none; }
+.kontakt-loeschen .kontakt-fuss { width: 100%; }

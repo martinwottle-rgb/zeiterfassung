@@ -4,6 +4,7 @@ import { addTage, ausDatumText, datumText, dauer, dauerMitVorzeichen, kalenderwo
 import { tagesInfo } from './rechnen.js';
 import { tagOeffnen } from './tag_sheet.js';
 import { pcVorschlaege, pcUebernehmen } from './vorschlaege.js';
+import { zeitSegment } from './zeit_segment.js';
 
 let ladeNr = 0; // nur das neueste Laden darf Vorschläge eintragen
 
@@ -199,6 +200,7 @@ export async function zeigen(ziel, kontext) {
     </section>
   `;
 
+  ziel.prepend(zeitSegment('woche'));
   const liste = ziel.querySelector('.liste');
   liste.addEventListener('click', (e) => {
     const zeile = e.target.closest('button[data-datum]');

@@ -1,9 +1,11 @@
-// IndexedDB-Speicher für Blöcke, Abwesenheiten, Reisen und Einstellungen.
+// IndexedDB-Speicher für Blöcke, Abwesenheiten, Reisen, Kontakte, Belege, Bilder und Einstellungen.
 // Keine Abhängigkeiten. Jede schreibende Funktion meldet 'daten-geaendert'.
 
+import { b64AusBytes, bytesAusB64 } from './krypto.js';
+
 const DB_NAME = 'zeiterfassung';
-const DB_VERSION = 2;
-const ARTEN = ['bloecke', 'abwesenheiten', 'reisen'];
+const DB_VERSION = 3;
+const ARTEN = ['bloecke', 'abwesenheiten', 'reisen', 'kontakte', 'belege'];
 const EINSTELLUNGEN_SCHLUESSEL = 'einstellungen';
 
 // Eine Verbindung pro Seite, als Promise zwischengespeichert.
@@ -15,11 +17,14 @@ function db() {
       const oeffnen = indexedDB.open(DB_NAME, DB_VERSION);
       oeffnen.onupgradeneeded = () => {
         const d = oeffnen.result;
-        // Nur fehlende Speicher anlegen, vorhandene (Version 1) bleiben unberührt.
+        // Nur fehlende Speicher anlegen, vorhandene (Version 1 und 2) bleiben unberührt.
         if (!d.objectStoreNames.contains('bloecke')) d.createObjectStore('bloecke', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('abwesenheiten')) d.createObjectStore('abwesenheiten', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('einstellungen')) d.createObjectStore('einstellungen'); // ohne keyPath, Schlüssel wird angegeben
         if (!d.objectStoreNames.contains('reisen')) d.createObjectStore('reisen', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('kontakte')) d.createObjectStore('kontakte', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('belege')) d.createObjectStore('belege', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('bilder')) d.createObjectStore('bilder', { keyPath: 'id' });
       };
       oeffnen.onsuccess = () => {
         const d = oeffnen.result;
@@ -152,40 +157,103 @@ export async function einstellungenSpeichern(e) {
   return { ...neu };
 }
 
+// Bilder (Visitenkarten, Notizen, Belege): Base64 im Eintrag, nie im Export.
+// Eintrag: {id, typ, daten (Base64), hochgeladen, geaendert}.
+
+// Speichert ein Bild und gibt seine id zurück. Startet den Abgleich (daten-geaendert).
+export async function bildSpeichern(blob) {
+  const id = crypto.randomUUID();
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const t = await transaktion(['bilder'], 'readwrite');
+  t.objectStore('bilder').put({
+    id, typ: blob.type || 'application/octet-stream', daten: b64AusBytes(bytes), hochgeladen: false, geaendert: Date.now(),
+  });
+  await abschluss(t);
+  melden();
+  return id;
+}
+
+// Bild als Blob, oder null, wenn es das Bild nicht gibt.
+export async function bildLaden(id) {
+  const t = await transaktion(['bilder'], 'readonly');
+  const eintrag = await warte(t.objectStore('bilder').get(id));
+  if (!eintrag) return null;
+  return new Blob([bytesAusB64(eintrag.daten)], { type: eintrag.typ });
+}
+
+// Alle Bilder, die noch nicht auf GitHub liegen (mit Typ und Daten, für den Abgleich).
+export async function bilderOhneUpload() {
+  const t = await transaktion(['bilder'], 'readonly');
+  const liste = await warte(t.objectStore('bilder').getAll());
+  return liste.filter((b) => !b.hochgeladen);
+}
+
+// Markiert ein Bild als hochgeladen. Kein 'daten-geaendert', sonst würde der Abgleich sich selbst anstoßen.
+export async function bildHochgeladen(id) {
+  const t = await transaktion(['bilder'], 'readwrite');
+  const speicher = t.objectStore('bilder');
+  const alt = await warte(speicher.get(id));
+  if (alt) speicher.put({ ...alt, hochgeladen: true });
+  await abschluss(t);
+}
+
+// Legt ein vom Abgleich geholtes Bild ab (schon hochgeladen). Kein 'daten-geaendert'.
+export async function bildAblegen(eintrag) {
+  const t = await transaktion(['bilder'], 'readwrite');
+  t.objectStore('bilder').put({
+    id: eintrag.id, typ: eintrag.typ, daten: eintrag.daten, hochgeladen: true, geaendert: Date.now(),
+  });
+  await abschluss(t);
+}
+
 // Komplette Sicherung als Objekt (wird vom Aufrufer als JSON gespeichert).
+// Kontakte und Belege sind optionale Felder wie Reisen; Bilder kommen nie in den Export.
 export async function exportieren() {
   const bloecke = await alle('bloecke');
   const abwesenheiten = await alle('abwesenheiten');
   const reisen = await alle('reisen');
+  const kontakte = await alle('kontakte');
+  const belege = await alle('belege');
   const einstellungen = await einstellungenLaden();
-  // Version bleibt 1: die Prüfung beim Import verlangt sie, Reisen sind ein optionales Feld.
-  return { version: 1, bloecke, abwesenheiten, reisen, einstellungen };
+  // Version bleibt 1: die Prüfung beim Import verlangt sie, die übrigen Felder sind optional.
+  return { version: 1, bloecke, abwesenheiten, reisen, kontakte, belege, einstellungen };
 }
 
 // Schreibt einen Eintrag nur, wenn er neu ist oder neuer als der vorhandene (gleich: vorhandenen behalten).
-function zusammenfuehren(speicher, eintrag) {
+function zusammenfuehren(speicher, eintrag, zaehler) {
   speicher.get(eintrag.id).onsuccess = (ev) => {
     const alt = ev.target.result;
-    if (!alt || (eintrag.geaendert ?? 0) > (alt.geaendert ?? 0)) speicher.put(eintrag);
+    if (!alt || (eintrag.geaendert ?? 0) > (alt.geaendert ?? 0)) {
+      speicher.put(eintrag);
+      zaehler.n++;
+    }
   };
 }
 
 // Führt eine Sicherung in einer Transaktion mit dem Bestand zusammen.
 export async function importieren(daten) {
-  const t = await transaktion(['bloecke', 'abwesenheiten', 'reisen', 'einstellungen'], 'readwrite');
-  for (const b of daten?.bloecke ?? []) if (b?.id != null) zusammenfuehren(t.objectStore('bloecke'), b);
-  for (const a of daten?.abwesenheiten ?? []) if (a?.id != null) zusammenfuehren(t.objectStore('abwesenheiten'), a);
-  // Alte Sicherungen ohne 'reisen': die Schleife tut dann nichts
-  for (const r of daten?.reisen ?? []) if (r?.id != null) zusammenfuehren(t.objectStore('reisen'), r);
+  const t = await transaktion(['bloecke', 'abwesenheiten', 'reisen', 'kontakte', 'belege', 'einstellungen'], 'readwrite');
+  const z = { n: 0 };                     // Anzahl tatsächlich übernommener Einträge
+  for (const b of daten?.bloecke ?? []) if (b?.id != null) zusammenfuehren(t.objectStore('bloecke'), b, z);
+  for (const a of daten?.abwesenheiten ?? []) if (a?.id != null) zusammenfuehren(t.objectStore('abwesenheiten'), a, z);
+  // Alte Sicherungen ohne 'reisen', 'kontakte' oder 'belege': die Schleifen tun dann nichts
+  for (const r of daten?.reisen ?? []) if (r?.id != null) zusammenfuehren(t.objectStore('reisen'), r, z);
+  for (const k of daten?.kontakte ?? []) if (k?.id != null) zusammenfuehren(t.objectStore('kontakte'), k, z);
+  for (const b of daten?.belege ?? []) if (b?.id != null) zusammenfuehren(t.objectStore('belege'), b, z);
   // Einstellungen nur übernehmen, wenn sie neuer sind
   const e = daten?.einstellungen;
   if (e) {
     const speicher = t.objectStore('einstellungen');
     speicher.get(EINSTELLUNGEN_SCHLUESSEL).onsuccess = (ev) => {
       const alt = ev.target.result;
-      if (!alt || (e.geaendert ?? 0) > (alt.geaendert ?? 0)) speicher.put(e, EINSTELLUNGEN_SCHLUESSEL);
+      if (!alt || (e.geaendert ?? 0) > (alt.geaendert ?? 0)) {
+        speicher.put(e, EINSTELLUNGEN_SCHLUESSEL);
+        z.n++;
+      }
     };
   }
   await abschluss(t);
-  melden();
+  // Nur melden, wenn wirklich etwas übernommen wurde; die Quelle sagt der App, dass kein neuer Abgleich nötig ist
+  if (z.n > 0) window.dispatchEvent(new CustomEvent('daten-geaendert', { detail: { quelle: 'import' } }));
+  return z.n;
 }

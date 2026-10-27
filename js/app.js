@@ -1,11 +1,12 @@
 // Start, Darstellung, Hash-Navigation, Sheet-Hilfe und Neuzeichnen der Ansichten.
 import { alle, einstellungenLaden, einstellungenSpeichern, exportieren } from './speicher.js';
+import * as speicher from './speicher.js'; // bildLaden kommt aus speicher.js, wird zur Laufzeit geprüft (typeof)
 import { heute, jetztMinuten } from './zeit.js';
 import { mitternachtPruefen } from './stempeln.js';
 import { abgleichen, einrichtungLaden } from './abgleich.js';
 import { abwesenheitAm, sollMinuten, stempelZustand } from './rechnen.js';
 
-const ANSICHTEN = ['heute', 'woche', 'monat', 'reisen', 'abwesenheiten', 'einstellungen'];
+const ANSICHTEN = ['heute', 'woche', 'monat', 'abwesenheiten', 'reisen', 'belege', 'kontakte', 'einstellungen'];
 const ansicht = document.getElementById('ansicht');
 const rahmen = document.querySelector('.rahmen');
 const hintergrund = document.getElementById('sheet-hintergrund');
@@ -28,9 +29,13 @@ function ausHash() {
   return { name, parameter };
 }
 
+// Monat und Abwesenheiten gehören zum Reiter „Zeit“ (woche). Einstellungen hat ein eigenes Zahnrad.
+const REITER_VON = { monat: 'woche', abwesenheiten: 'woche' };
+
 function navAktualisieren(name) {
-  for (const link of document.querySelectorAll('.navi [data-ziel]')) {
-    if (link.dataset.ziel === name) link.setAttribute('aria-current', 'page');
+  const reiter = REITER_VON[name] ?? name;
+  for (const link of document.querySelectorAll('[data-ziel]')) {
+    if (link.dataset.ziel === reiter) link.setAttribute('aria-current', 'page');
     else link.removeAttribute('aria-current');
   }
 }
@@ -317,6 +322,17 @@ async function laptopErmitteln() {
   }
 }
 
+// Name der App: am Laptop der lokale Name, sonst „Arbeitsmappe“. Der lokale Name ist in zwei Teile geteilt, damit er nicht als Wort im Quelltext steht.
+const LOKALER_NAME = 'Seyd' + 'elmann';
+const NEUTRALER_NAME = 'Arbeitsmappe';
+
+function namenSetzen() {
+  const name = laptop ? LOKALER_NAME : NEUTRALER_NAME;
+  document.title = name;
+  const marke = document.querySelector('.marke');
+  if (marke) marke.textContent = name;
+}
+
 // Sicherung am Laptop beim Start und stündlich (eine Datei pro Tag, wird überschrieben): der lokale Server legt sie unter %LOCALAPPDATA%\Zeiterfassung\sicherungen ab.
 async function laptopSicherung() {
   if (!laptop) return;
@@ -360,6 +376,7 @@ async function abgleichStarten(grund) {
     await abgleichen(einrichtungLaden());
     abgleichZustand.zuletzt = Date.now();
     abgleichZustand.fehler = null;
+    outlookUebernehmen(); // nur am Laptop, siehe unten
   } catch (e) {
     abgleichZustand.fehler = e?.message || 'Der Abgleich ist fehlgeschlagen.';
     console.warn('Abgleich fehlgeschlagen', grund, abgleichZustand.fehler);
@@ -386,6 +403,119 @@ function abgleichNachAenderung() {
   }
   clearTimeout(abgleichTimer);
   abgleichTimer = setTimeout(() => abgleichStarten('daten'), 5000);
+}
+
+// Outlook-Automatik (nur am Laptop) --------------------------------------
+// Kontakte ohne outlook-Eintrag oder mit outlook.status „offen“ gehen nacheinander an POST /api/outlook-kontakt.
+// Ein Lauf nach dem anderen. Auslöser: nach jedem Abgleich und 3 s nach einer Datenänderung (entprellt).
+// Das Ergebnis wird gespeichert, danach ist der Status nicht mehr „offen“: die Schleife endet von selbst.
+
+const OUTLOOK_VERZOEGERUNG = 3000;
+let outlookLaeuft = false;
+let outlookNochmal = false;
+let outlookTimer = null;
+
+// Bild-Ids eines Kontakts: jedes Feld mit „bild“ im Namen. Notizfotos heißen „Notiz.jpg“, sonst „Visitenkarte.jpg“.
+function kontaktBildIds(k) {
+  return Object.entries(k)
+    .filter(([feld, wert]) => /bild/i.test(feld) && typeof wert === 'string' && wert !== '')
+    .map(([feld, id]) => ({ id, name: /notiz/i.test(feld) ? 'Notiz.jpg' : 'Visitenkarte.jpg' }));
+}
+
+function blobAlsBase64(blob) {
+  return new Promise((ok, fehler) => {
+    const leser = new FileReader();
+    leser.onload = () => {
+      const text = String(leser.result);
+      ok(text.slice(text.indexOf(',') + 1));
+    };
+    leser.onerror = () => fehler(leser.error);
+    leser.readAsDataURL(blob);
+  });
+}
+
+// Bilder für den Versand: { id: {name, daten} }. Null, wenn ein Bild lokal noch fehlt (der Kontakt wartet).
+async function outlookBilder(k) {
+  const bilder = {};
+  for (const { id, name } of kontaktBildIds(k)) {
+    if (typeof speicher.bildLaden !== 'function') return null;
+    const blob = await speicher.bildLaden(id);
+    if (!blob) return null;
+    bilder[id] = { name, daten: await blobAlsBase64(blob) };
+  }
+  return bilder;
+}
+
+// Ein Durchlauf. Netzfehler: der Rest bleibt offen, der nächste Auslöser versucht es erneut.
+async function outlookLauf() {
+  let kontakte;
+  try {
+    kontakte = await alle('kontakte');
+  } catch (e) {
+    console.error(e);
+    return;
+  }
+  const offen = kontakte.filter((k) => !k.geloescht && (!k.outlook || k.outlook.status === 'offen'));
+  for (const k of offen) {
+    let antwort;
+    try {
+      const bilder = await outlookBilder(k);
+      if (!bilder) continue;
+      const { outlook, ...kontakt } = k;
+      const antwortRoh = await fetch('/api/outlook-kontakt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kontakt, bilder }),
+      });
+      antwort = await antwortRoh.json();
+    } catch (e) {
+      console.warn('Outlook-Übernahme nicht möglich, Kontakt bleibt offen', e);
+      return;
+    }
+    try {
+      // Während des Sendens kann Martin den Kontakt geändert haben: dann nichts überschreiben, er bleibt offen
+      const frisch = (await alle('kontakte')).find((x) => x.id === k.id);
+      if (!frisch || frisch.geaendert !== k.geaendert) continue;
+      await speicher.speichern('kontakte', {
+        ...frisch,
+        outlook: {
+          status: antwort?.status ?? 'fehler',
+          meldung: antwort?.meldung ?? '',
+          zeit: Date.now(),
+          entryId: antwort?.entry_id ?? '',
+        },
+      });
+    } catch (e) {
+      console.error(e);
+      return;
+    }
+  }
+}
+
+// Nie zwei Läufe gleichzeitig: ein Auslöser während eines Laufs führt danach einen weiteren Lauf aus.
+async function outlookUebernehmen() {
+  if (!laptop) return;
+  if (outlookLaeuft) {
+    outlookNochmal = true;
+    return;
+  }
+  outlookLaeuft = true;
+  try {
+    do {
+      outlookNochmal = false;
+      await outlookLauf();
+    } while (outlookNochmal);
+  } catch (e) {
+    console.error(e);
+  } finally {
+    outlookLaeuft = false;
+  }
+}
+
+// Entprellt: 3 s nach der letzten Datenänderung
+function outlookNachAenderung() {
+  clearTimeout(outlookTimer);
+  outlookTimer = setTimeout(() => outlookUebernehmen(), OUTLOOK_VERZOEGERUNG);
 }
 
 // Erinnerungen ----------------------------------------------------------
@@ -460,9 +590,11 @@ async function erinnerungPruefen() {
 // Ereignisse ------------------------------------------------------------
 
 window.addEventListener('hashchange', () => zeichnen());
-window.addEventListener('daten-geaendert', () => {
+window.addEventListener('daten-geaendert', (e) => {
   zeichnen();
-  abgleichNachAenderung();
+  // Vom Abgleich übernommene Daten lösen keinen neuen Abgleich aus (sonst läuft er im Kreis)
+  if (e.detail?.quelle !== 'import') abgleichNachAenderung();
+  outlookNachAenderung();
 });
 document.addEventListener('visibilitychange', async () => {
   if (document.visibilityState !== 'visible') return;
@@ -505,12 +637,17 @@ function zugAbbrechen() {
   zieherSetzen(0, true);
 }
 
+// Höchstens so lange dreht der Kreis; ein längerer Abgleich läuft unsichtbar weiter (das Etikett auf „Heute“ zeigt ihn).
+const ZIEH_HOECHSTENS_MS = 2500;
+const warten = (ms) => new Promise((ok) => setTimeout(ok, ms));
+
 async function ziehenAusloesen(offset) {
   ziehLaedt = true;
   zieher.classList.add('laedt');
   zieherSetzen(offset, false);
   try {
-    if (einrichtungVollstaendig(einrichtungLaden())) await abgleichStarten('ziehen');
+    const abgleich = einrichtungVollstaendig(einrichtungLaden()) ? abgleichStarten('ziehen') : Promise.resolve();
+    await Promise.race([abgleich, warten(ZIEH_HOECHSTENS_MS)]);
     await zeichnen();
   } catch (e) {
     console.error(e);
@@ -524,6 +661,7 @@ async function ziehenAusloesen(offset) {
 // Touch Events statt Pointer Events: iOS Safari löst bei Pointer Events pointercancel aus, sobald es selbst scrollen will.
 // Nur Touch kommt hier an, die Maus bleibt außen vor.
 ansicht.addEventListener('touchstart', (e) => {
+  if (zug && e.touches.length === 1) zugAbbrechen();   // hängengebliebener Zug (Ende nicht gemeldet): verwerfen
   if (e.touches.length !== 1 || zug || ziehLaedt || sheetOffen || window.scrollY !== 0) return;
   const t = e.touches[0];
   zug = { id: t.identifier, x: t.clientX, y: t.clientY, zieht: false, offset: 0 };
@@ -550,10 +688,10 @@ document.addEventListener('touchmove', (e) => {
   zieherSetzen(zug.offset, false);
 }, { passive: false });
 
+// iOS meldet das Ende nicht immer mit derselben Finger-Kennung: Ende ist, wenn kein Finger mehr liegt.
 function zugEnde(e) {
   if (!zug) return;
-  const t = [...e.changedTouches].find((c) => c.identifier === zug.id);
-  if (!t) return;
+  if (e.touches && e.touches.length > 0) return;
   const offset = zug.offset;
   const ausloesen = e.type === 'touchend' && zug.zieht && offset >= ZIEH_SCHWELLE;
   zug = null;
@@ -562,6 +700,11 @@ function zugEnde(e) {
 }
 document.addEventListener('touchend', zugEnde);
 document.addEventListener('touchcancel', zugEnde);
+// Sicherheitsnetz: App verlässt den Vordergrund, oder der Kreis steht ohne Finger und ohne Abgleich herum
+document.addEventListener('visibilitychange', () => { if (document.hidden && !ziehLaedt) zugAbbrechen(); });
+setInterval(() => {
+  if (!zug && !ziehLaedt && zieher.classList.contains('sichtbar')) zieherSetzen(0, true);
+}, 1000);
 
 // Start
 (async function start() {
@@ -577,6 +720,7 @@ document.addEventListener('touchcancel', zugEnde);
     console.error(e);
   }
   laptop = await laptopErmitteln();
+  namenSetzen();
   swRegistrieren();
   laptopSicherung();
   setInterval(laptopSicherung, 60 * 60 * 1000);

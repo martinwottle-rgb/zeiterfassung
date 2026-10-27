@@ -425,11 +425,11 @@ function abgleichEtikettZeichnen(knopf, kontext) {
   const s = kontext.abgleichStatus();
   knopf.hidden = !s.eingerichtet;
   if (!s.eingerichtet) return;
+  // Während eines Abgleichs dreht nur das Symbol; der Text bleibt stehen, damit der Kopf nicht springt
   let text;
-  if (s.laeuft) text = 'Gleicht ab';
-  else if (s.fehler) text = 'Abgleich gestört';
+  if (s.fehler && !s.laeuft) text = 'Abgleich gestört';
   else if (s.zuletzt) text = abgeglichenText(s.zuletzt, kontext.heute);
-  else text = 'Noch nicht abgeglichen';
+  else text = s.laeuft ? 'Gleicht ab' : 'Noch nicht abgeglichen';
 
   knopf.classList.toggle('laeuft', Boolean(s.laeuft));
   knopf.classList.toggle('gestoert', !s.laeuft && Boolean(s.fehler));

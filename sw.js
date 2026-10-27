@@ -1,7 +1,7 @@
 ﻿// Offline-Zwischenspeicher der Zeiterfassung.
 // Strategie: zuerst das Netz (Ã„nderungen kommen sofort an), bei Fehler der Zwischenspeicher (offline lÃ¤uft die App).
 // /api/ wird nie zwischengespeichert. Bei neuer VERSION werden alte Caches gelÃ¶scht.
-const VERSION = 'z10';
+const VERSION = 'z11';
 const CACHE = 'zeiterfassung-' + VERSION;
 const DATEIEN = [
   './',
@@ -31,12 +31,30 @@ const DATEIEN = [
   './js/vorschlaege.js',
   './js/ansicht_reisen.js',
   './js/reisekosten_knopf.js',
+  './js/zeit_segment.js',
+  './js/kontakte.js',
+  './js/zuschnitt.js',
+  './js/ocr.js',
+  './js/ansicht_kontakte.js',
+  './js/kontakt_sheet.js',
+  './vendor/tesseract/tesseract.min.js',
+  './vendor/tesseract/worker.min.js',
+  './vendor/tesseract/tesseract-core-simd-lstm.wasm.js',
+  './vendor/tesseract/tesseract-core-lstm.wasm.js',
+  './vendor/tessdata/deu.traineddata.gz',
+  './vendor/tessdata/eng.traineddata.gz',
+  './vendor/pdf/pdf-lib.min.js',
+  './vendor/pdf/pdf.min.js',
+  './vendor/pdf/pdf.worker.min.js',
   './vorschlaege.css',
 ];
 
 self.addEventListener('install', (ereignis) => {
   ereignis.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(DATEIEN)).then(() => self.skipWaiting())
+    // Einzeln laden: fehlt eine Datei, scheitert nicht die ganze Installation
+    caches.open(CACHE)
+      .then((cache) => Promise.allSettled(DATEIEN.map((d) => cache.add(d))))
+      .then(() => self.skipWaiting())
   );
 });
 

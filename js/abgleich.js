@@ -1,12 +1,13 @@
 // Abgleich mit einem privaten GitHub-Repo. Die Sicherung liegt dort verschlüsselt als Datei.
 // Ablauf: holen, entschlüsseln, zusammenführen, nur bei Unterschied verschlüsselt hochladen.
+// Danach die Bilder: jedes noch nicht hochgeladene Bild als eigene verschlüsselte Datei.
 // Token und Passwort bleiben auf dem Gerät (localStorage) und gehen nie in Logs oder den Export.
 
-import { exportieren, importieren } from './speicher.js';
+import { exportieren, importieren, bilderOhneUpload, bildHochgeladen, bildLaden, bildAblegen } from './speicher.js';
 import { verschluesseln, entschluesseln, b64Utf8AusText, textAusB64Utf8 } from './krypto.js';
 
 const EINRICHTUNG_SCHLUESSEL = 'zeit.abgleich';
-const LISTEN = ['bloecke', 'abwesenheiten', 'reisen'];
+const LISTEN = ['bloecke', 'abwesenheiten', 'reisen', 'kontakte', 'belege'];
 
 // Einrichtung laden. Bei Fehler oder fehlender Einrichtung: null.
 export function einrichtungLaden() {
@@ -55,11 +56,25 @@ export function normalisiert(daten) {
   return JSON.stringify(sortiereSchluessel(kopie));
 }
 
-// Adresse der Datei im Repo, z. B. https://api.github.com/repos/besitzer/name/contents/daten.json.enc
-function adresse(e) {
+// Adresse einer Datei im Repo. teile: Pfadteile relativ zum Repo-Wurzel.
+// z. B. https://api.github.com/repos/besitzer/name/contents/daten.json.enc
+function adresseFuer(e, teile) {
   const repo = repoName(e.repo).split('/').map(encodeURIComponent).join('/');
-  const pfad = String(e.pfad).split('/').map(encodeURIComponent).join('/');
+  const pfad = teile.map(encodeURIComponent).join('/');
   return `https://api.github.com/repos/${repo}/contents/${pfad}`;
+}
+
+// Adresse der Hauptdatei.
+function adresse(e) {
+  return adresseFuer(e, String(e.pfad).split('/'));
+}
+
+// Adresse eines Bildes: Ordner „bilder“ neben der Hauptdatei, z. B. bilder/<id>.enc
+// (liegt die Hauptdatei in einem Unterordner, liegt bilder/ daneben).
+function bildAdresse(e, id) {
+  const teile = String(e.pfad).split('/');
+  teile.pop(); // Dateiname der Hauptdatei weg, der Ordner bleibt
+  return adresseFuer(e, [...teile, 'bilder', id + '.enc']);
 }
 
 // Nimmt auch die ganze Adresse oder Leerzeichen: „https://github.com/name/repo.git “ → „name/repo“.
@@ -97,6 +112,12 @@ async function anfrage(fetchFn, url, opt) {
     return await fetchFn(url, opt);
   } catch {
     throw new Error('GitHub ist nicht erreichbar (keine Verbindung).');
+  }
+}
+
+function pruefeEinrichtung(e) {
+  if (!e?.repo || !e?.token || !e?.passwort || !e?.pfad) {
+    throw new Error('Der Abgleich ist noch nicht eingerichtet.');
   }
 }
 
@@ -141,19 +162,65 @@ async function abgleichenEinmal(e, fetchFn, versuch) {
   return { hochgeladen: true, geholt, wiederholen: false };
 }
 
-async function abgleichenWirklich(e, fetchFn) {
-  if (!e?.repo || !e?.token || !e?.passwort || !e?.pfad) {
-    throw new Error('Der Abgleich ist noch nicht eingerichtet.');
+// Ein Bild als eigene verschlüsselte Datei hochladen (ohne sha: gibt es die Datei schon, kommt 422).
+// Gibt true zurück, wenn das Bild danach auf GitHub liegt.
+async function bildHochladen(e, fetchFn, bild) {
+  const inhalt = await verschluesseln({ typ: bild.typ, daten: bild.daten }, e.passwort);
+  const antwort = await anfrage(fetchFn, bildAdresse(e, bild.id), {
+    method: 'PUT',
+    headers: kopf(e.token, true),
+    cache: 'no-store',
+    body: JSON.stringify({ message: 'Bild', content: b64Utf8AusText(inhalt) }),
+  });
+  if (antwort.status === 422) return true; // schon da, zählt als erledigt
+  pruefeStatus(antwort);
+  return true;
+}
+
+// Alle offenen Bilder hochladen. Fehler brechen den Abgleich nicht ab, das Bild bleibt für den nächsten Lauf offen.
+async function bilderAbgleichen(e, fetchFn) {
+  let bilderHochgeladen = 0;
+  let bilderOffen = 0;
+  for (const bild of await bilderOhneUpload()) {
+    try {
+      await bildHochladen(e, fetchFn, bild);
+      await bildHochgeladen(bild.id);
+      bilderHochgeladen++;
+    } catch {
+      bilderOffen++;
+    }
   }
+  return { bilderHochgeladen, bilderOffen };
+}
+
+// Ein Bild holen, wenn es lokal fehlt. Gibt einen Blob oder null zurück (nicht auf GitHub).
+export async function bildHolen(id, e, fetchFn = fetch) {
+  const lokal = await bildLaden(id);
+  if (lokal) return lokal;
+  pruefeEinrichtung(e);
+  const antwort = await anfrage(fetchFn, bildAdresse(e, id), {
+    method: 'GET', headers: kopf(e.token, false), cache: 'no-store',
+  });
+  if (antwort.status === 404) return null;
+  pruefeStatus(antwort);
+  const json = await antwort.json();
+  const inhalt = await entschluesseln(textAusB64Utf8(json.content), e.passwort);
+  await bildAblegen({ id, typ: inhalt.typ, daten: inhalt.daten });
+  return bildLaden(id);
+}
+
+async function abgleichenWirklich(e, fetchFn) {
+  pruefeEinrichtung(e);
   let ergebnis = await abgleichenEinmal(e, fetchFn, 0);
   if (ergebnis.wiederholen) ergebnis = await abgleichenEinmal(e, fetchFn, 1);
-  return { hochgeladen: ergebnis.hochgeladen, geholt: ergebnis.geholt };
+  const bilder = await bilderAbgleichen(e, fetchFn);
+  return { hochgeladen: ergebnis.hochgeladen, geholt: ergebnis.geholt, ...bilder };
 }
 
 // Eine Promise-Kette: Läuft schon ein Abgleich, wartet der nächste auf dessen Ende.
 let kette = Promise.resolve();
 
-// Gleicht mit GitHub ab. Gibt {hochgeladen, geholt} zurück.
+// Gleicht mit GitHub ab. Gibt {hochgeladen, geholt, bilderHochgeladen, bilderOffen} zurück.
 export function abgleichen(einrichtung, fetchFn = fetch) {
   const ergebnis = kette.then(() => abgleichenWirklich(einrichtung, fetchFn));
   kette = ergebnis.catch(() => {}); // Fehler nicht in die Kette weitergeben

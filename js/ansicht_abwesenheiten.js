@@ -4,6 +4,7 @@ import { aktiv, urlaubAnspruch, urlaubGenommen, urlaubRest } from './rechnen.js'
 import { feiertag, feiertageBW } from './feiertage.js';
 import { addTage, freitagDerWoche, langesDatum, monatsname, wochentag } from './zeit.js';
 import { loeschen, speichern } from './speicher.js';
+import { zeitSegment } from './zeit_segment.js';
 
 const ARTEN = [
   ['urlaub', 'Urlaub'],
@@ -299,7 +300,7 @@ export async function zeigen(ziel, kontext) {
   // Fokus merken, falls er im Bereich liegt, und nach dem Zeichnen zurücksetzen
   const merkeFokus = ziel.contains(document.activeElement) ? document.activeElement.id : '';
 
-  ziel.replaceChildren(kopf, urlaubKarte, el('div', { klasse: 'karte-aktion' }, [eintragen]), inhalt, feiertageSektion);
+  ziel.replaceChildren(zeitSegment('abwesenheiten'), kopf, urlaubKarte, el('div', { klasse: 'karte-aktion' }, [eintragen]), inhalt, feiertageSektion);
 
   if (merkeFokus && merkeFokus !== 'ansicht') {
     document.getElementById(merkeFokus)?.focus({ preventScroll: true });

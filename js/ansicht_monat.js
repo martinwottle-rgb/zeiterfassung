@@ -7,6 +7,7 @@ import { alle } from './speicher.js';
 import { reisekostenMonat, verpflegung } from './reisen.js';
 import { reisekostenKnopfVerdrahten } from './reisekosten_knopf.js';
 import { euro, kurzesDatum, landAnzeige, reiseOeffnen } from './reise_sheet.js';
+import { zeitSegment } from './zeit_segment.js';
 
 const KURZ = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const ABWESENHEIT = { urlaub: 'Urlaub', krank: 'Krank', ueberstunden: 'Überstundenabbau', sonstiges: 'Abwesend' };
@@ -264,6 +265,7 @@ export async function zeigen(ziel, kontext) {
     ${reiseAbschnitt(reise, kontext.laptop === true)}
   `;
 
+  ziel.prepend(zeitSegment('monat'));
   ziel.dataset.monat = monatsTitel;
   if (kontext.daten.einstellungen && kontext.daten.einstellungen.name) {
     ziel.dataset.name = kontext.daten.einstellungen.name;
