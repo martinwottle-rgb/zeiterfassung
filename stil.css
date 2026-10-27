@@ -929,3 +929,6 @@ a.segment-teil:focus-visible { outline: 2px solid var(--akzent); outline-offset:
 .kontakt-loeschen { display: flex; flex-direction: column; align-items: flex-end; gap: 12px; }
 .kontakt-loeschen[hidden] { display: none; }
 .kontakt-loeschen .kontakt-fuss { width: 100%; }
+
+/* Der Inhaltsbereich bekommt beim Ansichtswechsel den Fokus (für VoiceOver); ein Rahmen darum hilft niemandem */
+#ansicht:focus, #ansicht:focus-visible { outline: none; }
