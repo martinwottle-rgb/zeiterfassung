@@ -1,7 +1,7 @@
 ﻿// Offline-Zwischenspeicher der Zeiterfassung.
 // Strategie: zuerst das Netz (Ã„nderungen kommen sofort an), bei Fehler der Zwischenspeicher (offline lÃ¤uft die App).
 // /api/ wird nie zwischengespeichert. Bei neuer VERSION werden alte Caches gelÃ¶scht.
-const VERSION = 'z13';
+const VERSION = 'z14';
 const CACHE = 'zeiterfassung-' + VERSION;
 const DATEIEN = [
   './',
@@ -75,7 +75,8 @@ self.addEventListener('fetch', (ereignis) => {
   if (adresse.pathname.includes('/api/')) return;          // Daten nie aus dem Zwischenspeicher
 
   ereignis.respondWith(
-    fetch(anfrage)
+    // Immer beim Server nachfragen (no-cache), damit neue Fassungen nicht 10 Minuten im Browser-Zwischenspeicher hängen
+    (anfrage.mode === 'navigate' ? fetch(anfrage, { cache: 'no-cache' }) : fetch(anfrage.url, { cache: 'no-cache' }))
       .then((antwort) => {
         if (antwort.ok) {
           const kopie = antwort.clone();
