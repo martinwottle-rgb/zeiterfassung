@@ -1,7 +1,10 @@
-// Visitenkarte aus einem Foto: QR-Code (vCard, MECARD oder URL) und Texterkennung zusammenführen.
-// QR-Werte haben Vorrang, leere QR-Felder werden aus der Texterkennung gefüllt.
+// Visitenkarte aus einem Foto: Karte finden und entzerren, QR-Code (vCard, MECARD oder URL) und Texterkennung zusammenführen.
+// QR-Werte haben Vorrang, leere QR-Felder werden aus der Texterkennung gefüllt. Ein QR-Code, der nur eine Web-Adresse
+// enthält, wird nicht als Web übernommen, sondern als qrLink zurückgegeben.
 import { qrSuchen } from './qr.js';
 import { textBloecke } from './ocr.js';
+import { karteErkennen } from './kantenerkennung.js';
+import { entzerren, homographie, punktAbbilden } from './zuschnitt.js';
 // Namensraum statt benannter Importe: fehlende Funktionen brechen so nicht das ganze Modul
 import * as kontakte from './kontakte.js';
 
@@ -10,6 +13,12 @@ const FELDER = ['titel', 'vorname', 'nachname', 'firma', 'position', 'telefon', 
 const SICHER_AB = 80;
 const RAND = 0.06;
 const URL_FORM = /^(?:https?:\/\/|www\.)\S+$|^[\p{L}\d-]+\.(?:de|com|net|org|eu|info|biz|at|ch|nl|be|io)(?:\/\S*)?$/iu;
+const KARTE_MIN = 1600; // lange Seite der entzerrten Karte: mindestens 1600 px ...
+const KARTE_MAX = 2400; // ... höchstens 2400 px (sonst wird die Entzerrung zu langsam)
+// Karte vor der Texterkennung suchen und entzerren. Aus: Die Kartenerkennung (kantenerkennung.js) findet noch nicht
+// zuverlässig die Karte; entzerrt wird dann falsch und die Erkennung wird schlechter (karten.html 42 statt 146 Felder).
+const KARTE_ENTZERREN = false;
+const DUNKEL = 110; // mittlere Helligkeit unter diesem Wert: dunkle Karte, Texterkennung auf Invertiertes
 
 const leer = () => Object.fromEntries(FELDER.map((f) => [f, '']));
 // Für Vergleiche: nur Buchstaben und Ziffern, Groß-/Kleinschreibung egal
@@ -88,39 +97,119 @@ function sicherheitVon(wert, blocke) {
   return Math.min(...treffer.map((b) => b.sicherheit));
 }
 
-// QR-Inhalt deuten: vCard, MECARD oder nur eine Web-Adresse
+// QR-Inhalt deuten: vCard oder MECARD liefert Felder. Eine reine Web-Adresse ist kein Feld, sondern ein Link.
 function qrDeuten(text) {
   const t = String(text ?? '').trim();
   if (/^BEGIN:VCARD/i.test(t)) return kontakte.vcardLesen?.(t) ?? null;
   if (/^MECARD:/i.test(t)) return kontakte.mecardLesen?.(t) ?? null;
-  if (URL_FORM.test(t) && !t.includes('@')) return { ...leer(), web: t };
   return null;
 }
 
-// Foto (Blob) einer Visitenkarte lesen. Liefert {felder, quelle, unsicher, text}.
+// Nur eine Web-Adresse im QR-Code (keine vCard, keine MECARD, keine E-Mail): als Link zurückgeben
+function qrLinkDeuten(text) {
+  const t = String(text ?? '').trim();
+  if (/^(BEGIN:VCARD|MECARD:)/i.test(t) || t.includes('@')) return null;
+  return URL_FORM.test(t) ? t : null;
+}
+
+// Mittlere Helligkeit (Stichprobe jedes 4. Pixels)
+function mittlereHelligkeit(ctx, breite, hoehe) {
+  const d = ctx.getImageData(0, 0, breite, hoehe).data;
+  let summe = 0;
+  let n = 0;
+  for (let i = 0; i < d.length; i += 16) {
+    summe += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    n++;
+  }
+  return n ? summe / n : 255;
+}
+
+// Farben umkehren (Alphawert bleibt)
+function invertieren(ctx, breite, hoehe) {
+  const bild = ctx.getImageData(0, 0, breite, hoehe);
+  const d = bild.data;
+  for (let i = 0; i < d.length; i += 4) {
+    d[i] = 255 - d[i];
+    d[i + 1] = 255 - d[i + 1];
+    d[i + 2] = 255 - d[i + 2];
+  }
+  ctx.putImageData(bild, 0, 0);
+}
+
+// Karte im Foto suchen und auf Kartengröße entzerren. Liefert {canvas, zurRaum}, wobei zurRaum einen Punkt des
+// Originalfotos auf die Fläche des Canvas abbildet. Gibt es keine Karte, ist es das ganze Foto ohne Entzerrung.
+async function karteEntzerren(bitmap) {
+  const W = bitmap.width;
+  const H = bitmap.height;
+  let ecken = null;
+  if (KARTE_ENTZERREN) {
+    try {
+      ecken = await karteErkennen(bitmap);
+    } catch {
+      ecken = null; // OpenCV nicht verfügbar: ohne Zuschnitt weiter
+    }
+  }
+  const quelle = flaeche(W, H);
+  const qctx = quelle.getContext('2d', { willReadFrequently: true });
+  qctx.drawImage(bitmap, 0, 0, W, H);
+  if (KARTE_ENTZERREN && ecken) {
+    try {
+      const d = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+      const breite0 = Math.max(d(ecken[0], ecken[1]), d(ecken[3], ecken[2]));
+      const hoehe0 = Math.max(d(ecken[0], ecken[3]), d(ecken[1], ecken[2]));
+      const lang = Math.max(breite0, hoehe0, 1);
+      const f = Math.min(Math.max(lang, KARTE_MIN), KARTE_MAX) / lang;
+      const breite = Math.max(1, Math.round(breite0 * f));
+      const hoehe = Math.max(1, Math.round(hoehe0 * f));
+      const bild = entzerren(qctx.getImageData(0, 0, W, H), ecken, breite, hoehe);
+      const canvas = flaeche(breite, hoehe);
+      canvas.getContext('2d', { willReadFrequently: true }).putImageData(bild, 0, 0);
+      // Abbildung Foto → Karte (Umkehrung der Entzerrung), für Koordinaten aus dem Originalfoto
+      const h = homographie(ecken, [{ x: 0, y: 0 }, { x: breite, y: 0 }, { x: breite, y: hoehe }, { x: 0, y: hoehe }]);
+      return { canvas, zurRaum: (p) => punktAbbilden(h, p) };
+    } catch {
+      // degenerierte Ecken: Foto ohne Zuschnitt verwenden
+    }
+  }
+  return { canvas: quelle, zurRaum: (p) => p };
+}
+
+// Foto (Blob) einer Visitenkarte lesen. Liefert {felder, quelle, unsicher, text, qrLink}.
 export async function kontaktAusBild(blob, fortschritt) {
   const eigenes = blob instanceof Blob;
   const bitmap = eigenes ? await createImageBitmap(blob) : blob;
   try {
-    const W = bitmap.width;
-    const H = bitmap.height;
-    const canvas = flaeche(W, H);
+    // 1. Karte finden und entzerren; darauf arbeiten alle folgenden Schritte
+    const { canvas, zurRaum } = await karteEntzerren(bitmap);
+    const W = canvas.width;
+    const H = canvas.height;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(bitmap, 0, 0, W, H);
 
-    // 1. QR-Code suchen und seinen Inhalt deuten
-    const qr = await qrSuchen(bitmap);
+    // 2. QR-Code suchen (auf der Karte, sonst im ganzen Foto) und seinen Inhalt deuten
+    let qr = await qrSuchen(canvas);
+    let qrEcken = qr?.ecken ?? null;
+    if (!qr) {
+      const roh = await qrSuchen(bitmap);
+      if (roh) {
+        qr = roh;
+        qrEcken = roh.ecken.map(zurRaum);
+      }
+    }
     const qrFelder = qr ? qrDeuten(qr.text) : null;
+    const qrLink = qr ? qrLinkDeuten(qr.text) : null;
 
-    // 2. QR-Fläche übermalen, damit die Texterkennung den Code nicht liest
-    if (qr) qrUebermalen(ctx, qr.ecken);
+    // 3. QR-Fläche übermalen, damit die Texterkennung den Code nicht liest (vor dem Invertieren)
+    if (qr) qrUebermalen(ctx, qrEcken);
 
-    // 3. Texterkennung blockweise, in Lesereihenfolge
+    // 4. Dunkle Karte: für die Texterkennung invertieren
+    if (mittlereHelligkeit(ctx, W, H) < DUNKEL) invertieren(ctx, W, H);
+
+    // 5. Texterkennung blockweise, in Lesereihenfolge
     const blocke = spaltenSortieren(await textBloecke(canvas, fortschritt));
     const text = blocke.map((b) => b.text).join('\n\n');
     const ocrFelder = kontakte.visitenkarteLesen(text);
 
-    // 4. Zusammenführen: QR-Werte zuerst, leere Felder aus der Texterkennung
+    // 6. Zusammenführen: QR-Werte zuerst, leere Felder aus der Texterkennung
     const felder = leer();
     const unsicher = [];
     let qrGenutzt = false;
@@ -141,8 +230,39 @@ export async function kontaktAusBild(blob, fortschritt) {
     }
 
     const quelle = qrGenutzt && ocrGenutzt ? 'qr+ocr' : qrGenutzt ? 'qr' : 'ocr';
-    return { felder, quelle, unsicher, text };
+    return { felder, quelle, unsicher, text, qrLink };
   } finally {
     if (eigenes) bitmap.close();
   }
+}
+
+// Mehrere Seiten einer Karte (Vorder- und Rückseite, Notiz) lesen und zusammenführen:
+// erste Seite hat Vorrang, leere Felder werden aus weiteren Seiten gefüllt, Texte mit Leerzeile verbunden.
+export async function kontaktAusSeiten(blobs, fortschritt) {
+  const felder = leer();
+  const unsicher = new Set();
+  const texte = [];
+  let qrLink = null;
+  let qrGenutzt = false;
+  let ocrGenutzt = false;
+  for (const blob of blobs) {
+    const r = await kontaktAusBild(blob, fortschritt);
+    for (const f of FELDER) {
+      if (felder[f] || !r.felder[f]) continue;
+      felder[f] = r.felder[f];
+      if (r.unsicher.includes(f)) unsicher.add(f);
+    }
+    if (!qrLink && r.qrLink) qrLink = r.qrLink;
+    if (r.text) texte.push(r.text);
+    if (r.quelle.includes('qr')) qrGenutzt = true;
+    if (r.quelle.includes('ocr')) ocrGenutzt = true;
+  }
+  const quelle = qrGenutzt && ocrGenutzt ? 'qr+ocr' : qrGenutzt ? 'qr' : 'ocr';
+  return {
+    felder,
+    quelle,
+    unsicher: FELDER.filter((f) => unsicher.has(f)),
+    text: texte.join('\n\n'),
+    qrLink,
+  };
 }

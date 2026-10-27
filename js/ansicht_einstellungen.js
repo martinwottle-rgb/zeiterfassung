@@ -2,8 +2,9 @@
 // Vor jedem Speichern wird der aktuelle Stand gelesen, damit schnelle Folgeänderungen sich nicht überschreiben.
 import { aktiv } from './rechnen.js';
 import { dauer, minutenAusUhrzeit } from './zeit.js';
-import { einstellungenLaden, einstellungenSpeichern, exportieren, importieren } from './speicher.js';
-import { einrichtungLaden, einrichtungSpeichern, einrichtungLoeschen } from './abgleich.js';
+import { einstellungenLaden, einstellungenSpeichern, exportieren, importieren, alle as alleEintraege, bildLaden, speichern } from './speicher.js';
+import { einrichtungLaden, einrichtungSpeichern, einrichtungLoeschen, bildHolen } from './abgleich.js';
+import { kontaktAusBild } from './kontakt_erkennung.js';
 
 const WOCHENTAGE = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
 const DARSTELLUNGEN = [['system', 'System'], ['light', 'Hell'], ['dark', 'Dunkel']];
@@ -183,7 +184,183 @@ function einrichtungFeldSichern(feldId, schluessel, wert, fehler, eingabe) {
   }
 }
 
+// Kontakte neu einlesen: Zustand im Modul, damit ein Neuzeichnen (daten-geaendert nach jedem Speichern) den Fortschritt nicht verliert.
+const KONTAKT_FELDER = ['titel', 'vorname', 'nachname', 'firma', 'position', 'telefon', 'mobil', 'email', 'web', 'strasse', 'plz', 'ort', 'land'];
+let kontakteNeu = { laeuft: false, abbruch: false, nr: 0, gesamt: 0, anteil: 0, ergebnis: '' };
+let neuKontext = null;
+
+// Kontakte mit Kartenfoto, nicht gelöscht
+async function kontakteMitFoto() {
+  const liste = await alleEintraege('kontakte');
+  return liste.filter((k) => !k.geloescht && k.bildKarte);
+}
+
+function kontakteStatusText() {
+  if (kontakteNeu.laeuft) {
+    return kontakteNeu.abbruch
+      ? `Kontakt ${kontakteNeu.nr} von ${kontakteNeu.gesamt} …, stoppt danach`
+      : `Kontakt ${kontakteNeu.nr} von ${kontakteNeu.gesamt} …`;
+  }
+  return kontakteNeu.ergebnis;
+}
+
+function kontakteKnopf() {
+  if (kontakteNeu.laeuft) {
+    const abbrechen = el('button', { type: 'button', klasse: 'knopf', id: 'kontakte-neu-knopf', text: 'Abbrechen' });
+    abbrechen.addEventListener('click', () => {
+      kontakteNeu.abbruch = true;
+      kontakteAktualisieren();
+    });
+    return abbrechen;
+  }
+  const start = el('button', { type: 'button', klasse: 'knopf', id: 'kontakte-neu-knopf', text: 'Neu einlesen' });
+  start.addEventListener('click', () => kontakteBestaetigen());
+  return start;
+}
+
+// Zeile in place aktualisieren, damit das Sheet und der aria-live-Bereich bestehen bleiben
+function kontakteAktualisieren() {
+  const status = document.getElementById('kontakte-neu-status');
+  if (status) {
+    status.textContent = kontakteStatusText();
+  }
+  const balken = document.getElementById('kontakte-neu-balken');
+  if (balken) {
+    balken.value = Math.round(kontakteNeu.anteil * 100);
+    balken.hidden = !kontakteNeu.laeuft;
+  }
+  const alt = document.getElementById('kontakte-neu-knopf');
+  if (alt && neuKontext) {
+    const neu = kontakteKnopf();
+    if (alt.textContent !== neu.textContent) {
+      const fokus = document.activeElement === alt;
+      alt.replaceWith(neu);
+      if (fokus) neu.focus({ preventScroll: true });
+    }
+  }
+}
+
+// Rückfrage im Sheet, danach der Lauf
+async function kontakteBestaetigen() {
+  if (kontakteNeu.laeuft || !neuKontext) return;
+  let liste;
+  try {
+    liste = await kontakteMitFoto();
+  } catch (e) {
+    console.error(e);
+    kontakteNeu.ergebnis = 'Die Kontakte konnten nicht gelesen werden.';
+    kontakteAktualisieren();
+    return;
+  }
+  if (!liste.length) {
+    kontakteNeu.ergebnis = 'Kein Kontakt hat ein Kartenfoto.';
+    kontakteAktualisieren();
+    return;
+  }
+  const anzahl = liste.length;
+  const abbrechen = el('button', { type: 'button', klasse: 'knopf', text: 'Abbrechen' });
+  abbrechen.addEventListener('click', () => neuKontext.sheet.schliessen());
+  const start = el('button', { type: 'button', klasse: 'knopf haupt', text: 'Neu einlesen' });
+  start.addEventListener('click', () => {
+    neuKontext.sheet.schliessen();
+    kontakteLauf(liste);
+  });
+  const inhalt = el('div', { klasse: 'formular-stapel' }, [
+    el('p', { klasse: 'notiz', text: `${anzahl} ${anzahl === 1 ? 'Kontakt' : 'Kontakte'} neu einlesen?` }),
+    el('div', { klasse: 'aktionen' }, [abbrechen, start]),
+  ]);
+  neuKontext.sheet.oeffnen('Kontakte neu einlesen', inhalt);
+}
+
+// Liest jeden Kontakt neu ein: Felder ersetzen, Notiz und Bilder bleiben
+async function kontakteLauf(liste) {
+  kontakteNeu = { laeuft: true, abbruch: false, nr: 0, gesamt: liste.length, anteil: 0, ergebnis: '' };
+  kontakteAktualisieren();
+  let neu = 0;
+  let ohneFoto = 0;
+  let fehler = 0;
+  for (let i = 0; i < liste.length; i++) {
+    if (kontakteNeu.abbruch) break;
+    const k = liste[i];
+    kontakteNeu.nr = i + 1;
+    kontakteNeu.anteil = i / liste.length;
+    kontakteAktualisieren();
+    try {
+      let blob = await bildLaden(k.bildKarte);
+      if (!blob) blob = await bildHolen(k.bildKarte, einrichtungLaden());
+      if (!blob) {
+        ohneFoto += 1;
+        continue;
+      }
+      const erg = await kontaktAusBild(blob, (p) => {
+        const teil = Math.min(Math.max(Number.isFinite(p) ? p : 0, 0), 1);
+        kontakteNeu.anteil = (i + teil) / liste.length;
+        kontakteAktualisieren();
+      });
+      const felder = Object.fromEntries(KONTAKT_FELDER.map((f) => [f, erg?.felder?.[f] ?? '']));
+      let notiz = k.notiz ?? '';
+      const link = String(erg?.qrLink ?? '').trim();
+      if (link && !notiz.includes(link)) notiz = notiz ? `${notiz}\nQR-Link: ${link}` : `QR-Link: ${link}`;
+      // Wie beim Neu einlesen im Sheet: der bisherige Status merkt sich in vorher
+      const alt = k.outlook ?? {};
+      const vorher = alt.status === 'offen' ? (alt.vorher ?? '') : (alt.status ?? '');
+      await speichern('kontakte', {
+        ...k,
+        ...felder,
+        notiz,
+        geprueft: true,
+        outlook: { status: 'offen', vorher, entryId: alt.entryId ?? '' },
+      });
+      neu += 1;
+    } catch (e) {
+      console.error(e);
+      fehler += 1;
+    }
+  }
+  const verarbeitet = neu + ohneFoto + fehler;
+  const offen = liste.length - verarbeitet;
+  const abgebrochen = kontakteNeu.abbruch;
+  const teile = [`${neu} neu eingelesen`];
+  if (ohneFoto) teile.push(`${ohneFoto} ohne Foto übersprungen`);
+  if (fehler) teile.push(`${fehler} mit Fehler übersprungen`);
+  if (abgebrochen && offen > 0) teile.push(`${offen} nicht mehr bearbeitet`);
+  let ergebnis;
+  if (!abgebrochen && !ohneFoto && !fehler) {
+    ergebnis = `${neu} ${neu === 1 ? 'Kontakt' : 'Kontakte'} neu eingelesen`;
+  } else {
+    ergebnis = (abgebrochen ? 'Abgebrochen. ' : '') + teile.join(', ');
+  }
+  kontakteNeu = { laeuft: false, abbruch: false, nr: 0, gesamt: 0, anteil: 0, ergebnis };
+  kontakteAktualisieren();
+}
+
+// Gruppe „Kontakte“: Zeile mit Knopf, Fortschritt und Ergebnis
+function kontakteGruppe() {
+  const balken = el('progress', {
+    klasse: 'kontakt-fortschritt',
+    id: 'kontakte-neu-balken',
+    max: 100,
+    value: Math.round(kontakteNeu.anteil * 100),
+    hidden: !kontakteNeu.laeuft,
+  });
+  balken.setAttribute('aria-labelledby', 'kontakte-neu-status');
+  const status = el('p', {
+    klasse: 'notiz',
+    id: 'kontakte-neu-status',
+    'aria-live': 'polite',
+    text: kontakteStatusText(),
+  });
+  const wert = el('div', { klasse: 'einstellung-wert' }, [kontakteKnopf(), balken, status]);
+  const zeile = el('div', { klasse: 'liste-zeile' }, [el('span', { klasse: 'liste-titel', text: 'Alle Kontakte neu einlesen' }), wert]);
+  return el('section', { klasse: 'gruppe' }, [
+    el('h2', { klasse: 'eyebrow', text: 'Kontakte' }),
+    el('div', { klasse: 'liste' }, [zeile]),
+    el('p', { klasse: 'gruppe-fuss', text: 'Liest alle Visitenkartenfotos mit der aktuellen Erkennung neu. Notizen und Fotos bleiben, die Felder werden ersetzt.' }),
+  ]);
+}
+
 export async function zeigen(ziel, kontext) {
+  neuKontext = kontext;
   const einst = kontext.daten.einstellungen;
 
   // Fokus merken, falls er im Bereich liegt, und nach dem Zeichnen zurücksetzen
@@ -583,6 +760,7 @@ export async function zeigen(ziel, kontext) {
         text: 'Token und Passwort bleiben nur auf diesem Gerät. Auf jedem Gerät dasselbe Passwort eintragen. Geht das Passwort verloren, sind die Daten im Repository nicht mehr lesbar.',
       }),
     ]),
+    kontakteGruppe(),
     gruppe('Sollzeit', sollZeilen, [sollFuss]),
     gruppe('Pause', [pauseZeile.element], [
       el('p', {

@@ -5,7 +5,9 @@
 import { bildLaden, bildSpeichern, loeschen, speichern } from './speicher.js';
 import { bildHolen, einrichtungLaden } from './abgleich.js';
 import { kontaktName, vcard, visitenkarteLesen } from './kontakte.js';
-import { kontaktAusBild } from './kontakt_erkennung.js';
+// Namensraum statt benannter Importe: fehlt eine Funktion, bricht so nicht das ganze Modul
+import * as erkennung from './kontakt_erkennung.js';
+import { scannen } from './scanner.js';
 import { zuschneiden } from './zuschnitt.js';
 import { uhrzeit } from './zeit.js';
 
@@ -124,13 +126,12 @@ function vorschau(quelle, alt) {
 }
 
 // Datei-Auswahl als Knopf: das Eingabefeld steckt im Label und ist für Screenreader und Tastatur erreichbar
-function dateiKnopf(text, accept, onDatei, { haupt = false, kamera = false } = {}) {
-  const label = el('label', `knopf kontakt-datei${haupt ? ' haupt' : ''}`);
+function dateiKnopf(text, accept, onDatei) {
+  const label = el('label', 'knopf kontakt-datei');
   const input = document.createElement('input');
   input.type = 'file';
   input.accept = accept;
   input.className = 'nur-sr';
-  if (kamera) input.setAttribute('capture', 'environment');
   input.addEventListener('change', () => {
     const datei = input.files?.[0];
     input.value = '';
@@ -219,28 +220,35 @@ function fortschrittZeigen(kontext) {
   };
 }
 
-// Foto lesen (mit Fortschrittsanzeige). Fehler werden als Hinweis zurückgegeben, nie geworfen.
-async function bildLesen(blob, kontext) {
+function leerErgebnis() {
+  return { felder: {}, quelle: '', unsicher: [], text: '', qrLink: '', fehler: '' };
+}
+
+// Erkennung mit Fortschritt im Sheet. Fehler kommen als Hinweis zurück, nie als Wurf.
+async function erkennungLaufen(kontext, lesen) {
   const zeigen = fortschrittZeigen(kontext);
   try {
-    const erg = await kontaktAusBild(blob, zeigen);
+    const erg = await lesen(zeigen);
     return {
       felder: erg?.felder ?? {},
       quelle: erg?.quelle ?? '',
       unsicher: erg?.unsicher ?? [],
       text: erg?.text ?? '',
+      qrLink: erg?.qrLink ?? '',
       fehler: '',
     };
   } catch (e) {
     console.error(e);
     return {
-      felder: {},
-      quelle: '',
-      unsicher: [],
-      text: '',
+      ...leerErgebnis(),
       fehler: `${e?.message || 'Die Texterkennung hat nicht geklappt.'} Bitte die Felder von Hand ausfüllen.`,
     };
   }
+}
+
+// Foto einer Karte lesen (Mediathek, neu einlesen)
+function bildLesen(blob, kontext) {
+  return erkennungLaufen(kontext, (zeigen) => erkennung.kontaktAusBild(blob, zeigen));
 }
 
 // Formular für Erfassen und Bearbeiten. stand: { titel, id, erstellt, felder, rohText, notiz,
@@ -261,9 +269,16 @@ function formularOeffnen(stand, kontext) {
   const quelleZeile = el('p', 'notiz kontakt-quelle', stand.quelle ?? '');
   quelleZeile.hidden = !stand.quelle;
 
-  const kartenFoto = stand.bildKarte
-    ? gruppe('Foto der Karte', [vorschau(stand.bildKarte, 'Foto der Visitenkarte')])
-    : null;
+  // Vorder- und Rückseite nebeneinander, nur wenn vorhanden
+  const kartenBilder = [];
+  if (stand.bildKarte) kartenBilder.push(vorschau(stand.bildKarte, 'Foto der Visitenkarte'));
+  if (stand.bildRueckseite) kartenBilder.push(vorschau(stand.bildRueckseite, 'Foto der Rückseite'));
+  let kartenFoto = null;
+  if (kartenBilder.length) {
+    const reihe = el('div', 'kontakt-bilder');
+    reihe.append(...kartenBilder);
+    kartenFoto = gruppe(kartenBilder.length > 1 ? 'Fotos der Karte' : 'Foto der Karte', [reihe]);
+  }
 
   const feldTeile = SPALTEN.map((keys) => {
     const boxen = keys.map((k) => {
@@ -445,6 +460,8 @@ function formularOeffnen(stand, kontext) {
       // Neue Fotos jetzt ablegen, vorhandene Ids bleiben
       let bildKarte = stand.bildKarte?.id ?? null;
       if (stand.bildKarte?.blob) bildKarte = await bildSpeichern(stand.bildKarte.blob);
+      let bildRueckseite = stand.bildRueckseite?.id ?? null;
+      if (stand.bildRueckseite?.blob) bildRueckseite = await bildSpeichern(stand.bildRueckseite.blob);
       let bildNotiz = stand.bildNotiz?.id ?? null;
       if (stand.bildNotiz?.blob) bildNotiz = await bildSpeichern(stand.bildNotiz.blob);
       // Outlook: der bisherige Status merkt sich in vorher, damit eigene Outlook-Kontakte korrigiert werden
@@ -454,6 +471,7 @@ function formularOeffnen(stand, kontext) {
         ...daten,
         id: stand.id ?? null,
         bildKarte,
+        bildRueckseite,
         bildNotiz,
         erstellt: stand.erstellt ?? Date.now(),
         geprueft: true,
@@ -480,10 +498,40 @@ function formularOeffnen(stand, kontext) {
   return form;
 }
 
-// Kontakt erfassen: Auswahl, Foto, Zuschnitt, Erkennung, Formular; oder direkt „Text scannen“ (iPhone)
+// Visitenkarte mit dem Scanner: Vorder- und Rückseite erkennen, Notiz als Foto. Abbrechen führt zur Auswahl zurück.
+async function visitenkarteScannen(kontext) {
+  kontext.sheet.schliessen();
+  const seiten = await scannen(kontext);
+  if (!seiten) {
+    kontaktErfassen(kontext);
+    return;
+  }
+  const seite = (rolle) => seiten.find((s) => s.rolle === rolle)?.blob ?? null;
+  const vorder = seite('Vorderseite');
+  const rueck = seite('Rückseite');
+  const notiz = seite('Notiz');
+  const karte = [vorder, rueck].filter(Boolean);
+  const erg = karte.length
+    ? await erkennungLaufen(kontext, (zeigen) => erkennung.kontaktAusSeiten(karte, zeigen))
+    : leerErgebnis();
+  formularOeffnen({
+    titel: 'Kontakt erfassen',
+    felder: { ...leereFelder(), ...erg.felder },
+    rohText: erg.text,
+    notiz: erg.qrLink ? `QR-Link: ${erg.qrLink}` : '',
+    bildKarte: vorder ? { blob: vorder } : null,
+    bildRueckseite: rueck ? { blob: rueck } : null,
+    bildNotiz: notiz ? { blob: notiz } : null,
+    hinweis: erg.fehler,
+    quelle: quelleText(erg.quelle),
+    unsicher: erg.unsicher,
+  }, kontext);
+}
+
+// Kontakt erfassen: Auswahl, Scanner, Foto aus der Mediathek, Formular; oder direkt „Text scannen“ (iPhone)
 export function kontaktErfassen(kontext) {
   const huelle = el('div', 'kontakt-auswahl');
-  const erklaerung = el('p', 'notiz', 'Fotografiere die Visitenkarte oder wähle ein Foto. Die Schrift wird auf diesem Gerät erkannt, nichts geht in eine Cloud.');
+  const erklaerung = el('p', 'notiz', 'Scanne die Visitenkarte mit der Kamera oder wähle ein Foto. Die Schrift wird auf diesem Gerät erkannt, nichts geht in eine Cloud.');
   const status = el('p', 'notiz kontakt-status');
   status.setAttribute('role', 'status');
   status.hidden = true;
@@ -514,8 +562,10 @@ export function kontaktErfassen(kontext) {
     }, kontext);
   });
 
-  const kamera = dateiKnopf('Visitenkarte fotografieren', 'image/*', (datei) => kartenFoto(datei), { haupt: true, kamera: true });
-  const fotos = dateiKnopf('Bild aus Fotos wählen', BILD_AUSWAHL, (datei) => kartenFoto(datei));
+  const scanKnopf = el('button', 'knopf haupt', 'Visitenkarte scannen');
+  scanKnopf.type = 'button';
+  scanKnopf.addEventListener('click', () => visitenkarteScannen(kontext));
+  const fotos = dateiKnopf('Foto aus der Mediathek', BILD_AUSWAHL, (datei) => kartenFoto(datei));
 
   // Zuschnitt, dann Erkennung mit Fortschritt, dann das Formular mit den erkannten Feldern
   async function kartenFoto(datei) {
@@ -542,7 +592,7 @@ export function kontaktErfassen(kontext) {
     }, kontext);
   }
 
-  huelle.append(erklaerung, kamera, fotos, textScan, ohneFoto, status);
+  huelle.append(erklaerung, scanKnopf, fotos, textScan, ohneFoto, status);
   kontext.sheet.oeffnen('Kontakt erfassen', huelle);
 }
 
@@ -556,6 +606,7 @@ function kontaktBearbeiten(k, kontext) {
     rohText: '',
     notiz: k.notiz ?? '',
     bildKarte: k.bildKarte ? { id: k.bildKarte } : null,
+    bildRueckseite: k.bildRueckseite ? { id: k.bildRueckseite } : null,
     bildNotiz: k.bildNotiz ? { id: k.bildNotiz } : null,
     hinweis: '',
     outlook: k.outlook,
@@ -714,6 +765,7 @@ export async function kontaktSeiteZeichnen(ziel, kontakt, kontext) {
   // Fotos antippen vergrößert an Ort und Stelle
   const bilder = [];
   if (k.bildKarte) bilder.push(vorschau({ id: k.bildKarte }, 'Foto der Visitenkarte'));
+  if (k.bildRueckseite) bilder.push(vorschau({ id: k.bildRueckseite }, 'Foto der Rückseite'));
   if (k.bildNotiz) bilder.push(vorschau({ id: k.bildNotiz }, 'Foto der Notiz'));
   if (bilder.length) {
     const reihe = el('div', 'kontakt-bilder');
@@ -784,6 +836,7 @@ export async function kontaktSeiteZeichnen(ziel, kontakt, kontext) {
         rohText: erg.text,
         notiz: k.notiz ?? '',
         bildKarte: { id: k.bildKarte },
+        bildRueckseite: k.bildRueckseite ? { id: k.bildRueckseite } : null,
         bildNotiz: k.bildNotiz ? { id: k.bildNotiz } : null,
         hinweis: erg.fehler || 'Mit neuer Erkennung gelesen, bitte prüfen',
         quelle: quelleText(erg.quelle),

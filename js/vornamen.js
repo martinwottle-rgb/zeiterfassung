@@ -102,6 +102,6 @@ export const VORNAMEN = new Set([
   'anders', 'bjorn', 'freja', 'kristina', 'linnea', 'maja', 'ole', 'per', 'sanna', 'tove',
   'bram', 'daan', 'femke', 'floris', 'joris', 'kees', 'lieke', 'maarten', 'piet', 'pieter', 'sanne', 'thijs', 'wouter',
   'dmitri', 'igor', 'ivan', 'katarina', 'milena', 'nadia', 'oleg', 'tomasz', 'vladimir', 'zoran', 'jakub', 'piotr',
-  'ahmed', 'ali', 'amir', 'mehmet', 'mustafa', 'omar', 'yusuf', 'hassan',
+  'ahmed', 'ali', 'amir', 'mehmet', 'mustafa', 'omar', 'yusuf', 'hassan', 'adnan', 'marwa', 'mina',
   'chen', 'ming', 'wei', 'yuki', 'hiroshi', 'kenji', 'priya', 'raj', 'arjun', 'anjali', 'sanjay', 'ravi',
 ]);
