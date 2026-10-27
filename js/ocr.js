@@ -234,15 +234,16 @@ async function durchlauf(worker, quelle, modus) {
 export async function textBloecke(blobOderCanvas, fortschritt) {
   aktuellerFortschritt = fortschritt ?? null;
   const worker = await workerHolen();
-  let besten = null;
-  for (const m of ['grau', 'original']) {
-    const e = await durchlauf(worker, blobOderCanvas, m);
-    if (!besten || e.punkte > besten.punkte) besten = e;
-  }
+  const laeufe = [];
+  for (const m of ['grau', 'original']) laeufe.push(await durchlauf(worker, blobOderCanvas, m));
+  let besten = laeufe.reduce((a, e) => (e.punkte > a.punkte ? e : a));
   if (besten.punkte < SCHWACH_SUMME) {
     const zweit = await durchlauf(worker, blobOderCanvas, 'adaptiv');
+    laeufe.push(zweit);
     if (zweit.punkte > besten.punkte) besten = zweit;
   }
+  // Text der anderen Läufe: hilft beim Lesen, wenn ein Wort dort richtig steht („Großekathöfer“ statt „GroBekathofer“)
+  besten.liste.nebentext = laeufe.filter((e) => e !== besten).map((e) => e.liste.map((b) => b.text).join('\n\n')).join('\n\n');
   return besten.liste;
 }
 

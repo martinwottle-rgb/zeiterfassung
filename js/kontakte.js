@@ -79,12 +79,17 @@ const aufraeumen = (t) => t.replace(/\s+/g, ' ').replace(/^[\s,;]+|[\s,;]+$/g, '
 const ohneUmlaut = (s) => String(s).toLowerCase().replace(/ä/g, 'a').replace(/ö/g, 'o').replace(/ü/g, 'u').replace(/ß/g, 'ss');
 const hatUmlaut = (s) => /[äöüß]/i.test(s);
 
-// Wort ohne Umlaut, das im Gesamttext mit Umlaut steht, bekommt dessen Schreibweise („Dusseldorf“ → „Düsseldorf“)
+// OCR liest „ß“ nach einem Vokal oft als „B“ („GroBe“) und Umlaute als Akzent („kathéfer“): für den Vergleich angleichen
+const bAlsSz = (w) => w.replace(/([aeiouäöü])B(?=\p{Ll})/gu, '$1ß');
+const vergleich = (w) => bAlsSz(w).normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/ß/g, 'ss');
+const umlautZahl = (w) => (w.match(/[äöüß]/gi) || []).length;
+
+// Wort, das im Gesamttext (oder im zweiten Erkennungslauf) mit mehr Umlauten steht, bekommt dessen Schreibweise
+// („Dusseldorf“ → „Düsseldorf“, „GroBekathofer“ → „Großekathöfer“)
 function umlautAusText(wert, woerter) {
   return wert.replace(/\p{L}+/gu, (w) => {
-    if (hatUmlaut(w)) return w;
-    const treffer = woerter.find((x) => hatUmlaut(x) && ohneUmlaut(x) === ohneUmlaut(w));
-    return treffer || w;
+    const treffer = woerter.find((x) => umlautZahl(x) > umlautZahl(w) && vergleich(x) === vergleich(w));
+    return treffer || bAlsSz(w);
   });
 }
 
@@ -104,7 +109,8 @@ function umlautAusDomain(wert, host) {
   });
 }
 
-const isFirma = (s) => RECHTSFORM.test(s) || BRANCHE.test(s);
+// Firma: Rechtsform oder Branchenwort; eine Rechtsform allein („ag“ aus Logo-Resten) zählt nicht
+const isFirma = (s) => (RECHTSFORM.test(s) && s.replace(RECHTSFORM, '').replace(/[^\p{L}]/gu, '').length >= 3) || BRANCHE.test(s);
 
 const labelArt = (w) => {
   const x = w.toLowerCase();
@@ -116,6 +122,14 @@ const labelArt = (w) => {
 // Symbol am Zeilenanfang (OCR-Ersatz für Icons): „&“ und „@“, „0“ vor einer Nummer, „M“ vor einem Namen.
 // „M +44“ bleibt, das ist die Mobil-Beschriftung.
 const symbolEntfernen = (s) => s.replace(/^(?:[&@]\s*|0\s+(?=.*\d)|M\s+(?=\p{L}))/u, '').trim();
+
+// Logo- und Icon-Reste vorne („(S/) BIOKORNTAKT“): Stücke mit Sonderzeichen, höchstens einem Buchstaben und ohne Ziffer
+function vorneMuell(s) {
+  const w = s.split(' ');
+  let i = 0;
+  while (i < w.length - 1 && /[^\p{L}\d+]/u.test(w[i]) && !/\d/.test(w[i]) && w[i].replace(/[^\p{L}]/gu, '').length <= 1) i++;
+  return i && /^\p{L}{2}/u.test(w[i]) ? w.slice(i).join(' ') : s;
+}
 
 // Vorname bekannt? Auch „HANS“ (Großbuchstaben) und „Hans-F.“ (Grundname „hans“)
 const vornameBekannt = (w) => {
@@ -253,7 +267,8 @@ function nummerIstMobil(nr, art) {
 }
 
 // Visitenkarte aus Text lesen. Gibt alle Felder zurück, leere als ''.
-export function visitenkarteLesen(text) {
+// nebentext: Text eines zweiten Erkennungslaufs; hilft bei Umlauten und bei Nummern, die dort vollständig stehen.
+export function visitenkarteLesen(text, { nebentext = '' } = {}) {
   const k = leerKontakt();
 
   // OCR-Fehler glätten: „(at)“ wird zu @, Leerzeichen um @ und nach „www.“ fallen weg
@@ -302,7 +317,7 @@ export function visitenkarteLesen(text) {
   for (const { s: rohTeil, b } of teile) {
     const folgtFunktion = posBlock === b;
     posBlock = -1;
-    let s = symbolEntfernen(rohTeil);
+    let s = vorneMuell(symbolEntfernen(rohTeil));
     // Britische Postleitzahl allein in einer Zeile
     if (UK_PLZ.test(s)) {
       k.plz = k.plz || ukPlz(s);
@@ -383,6 +398,20 @@ export function visitenkarteLesen(text) {
     if (po && !plzEintrag) plzEintrag = { idx: reste.length - 1, b };
   }
 
+  // Nummer, von der die OCR vorne etwas verloren hat („+49 /345 703 57“): steht sie im zweiten Lauf länger
+  // mit gleichem Anfang und gleichem Ende („+49 (0)176 /345 703 57“), gilt die längere
+  const nebenNummern = [...String(nebentext).matchAll(NUMMER)].map((m) => m[0].replace(/\s+/g, ' ').trim());
+  const ergaenzen = (nr) => {
+    const d = nr.replace(/\D/g, '');
+    const besser = nebenNummern.find((x) => {
+      const dx = x.replace(/\D/g, '');
+      return dx.length > d.length && dx.startsWith(d.slice(0, 2)) && dx.endsWith(d.slice(2));
+    });
+    return besser || nr;
+  };
+  if (k.mobil) k.mobil = ergaenzen(k.mobil);
+  if (k.telefon) k.telefon = ergaenzen(k.telefon);
+
   // Pass 2: Straße, Firma, Position; der Rest sind Namenskandidaten
   const titelZeile = (reste.find((r) => TITEL_ZEILE.test(r.s)) || {}).s || '';
   // Straße: Zeile direkt über der PLZ-Zeile im selben Block, mit Straßenwort, „Am ...“ oder Hausnummer am Ende
@@ -443,8 +472,17 @@ export function visitenkarteLesen(text) {
   if (lokal) for (const i of offen()) { name = nameAusMail(reste[i].s, lokal); if (name) { nameIdx = i; break; } }
   if (!name) for (const i of offen()) { name = nameLesen(reste[i].s); if (name) { nameIdx = i; break; } }
   if (nameIdx >= 0) verbraucht.add(nameIdx);
+  // Keine Namenszeile lesbar: Name aus dem Mail-Lokalteil „vorname.nachname“, wenn der Vorname bekannt ist
+  if (!name && k.email) {
+    const teile2 = k.email.slice(0, k.email.indexOf('@')).split(/[._]/);
+    if (teile2.length === 2 && teile2.every((x) => /^\p{L}{2,}$/u.test(x)) && vornameBekannt(teile2[0])) {
+      const gross = (x) => x.charAt(0).toUpperCase() + x.slice(1).toLowerCase();
+      name = { titel: '', vorname: gross(teile2[0]), nachname: gross(teile2[1]) };
+    }
+  }
   if (name) {
-    k.vorname = name.vorname;
+    // Abgekürzter Doppelname ohne Punkt („Hans-F“): Punkt ergänzen
+    k.vorname = name.vorname.replace(/-\p{Lu}$/u, '$&.');
     k.nachname = name.nachname;
   }
   k.titel = (name && name.titel) || titelZeile;
@@ -459,7 +497,7 @@ export function visitenkarteLesen(text) {
 
   // Umlaute: OCR liest oft „Dusseldorf“. Steht dasselbe Wort mit Umlaut im Text oder zeigt die Domain die
   // ue/oe/ae-Schreibweise, gilt die Umlaut-Schreibweise. Gilt für Ort und Straße.
-  const woerter = roh.match(/\p{L}+/gu) || [];
+  const woerter = `${roh}\n${nebentext}`.match(/\p{L}+/gu) || [];
   if (k.ort) k.ort = umlautAusDomain(umlautAusText(k.ort, woerter), host);
   // OCR liest „ß“ oft als „BB“ („GradestraBBe“)
   if (k.strasse) k.strasse = umlautAusText(k.strasse.replace(/stra(?:BB|B)e/g, 'straße'), woerter);

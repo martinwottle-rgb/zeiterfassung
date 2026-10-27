@@ -208,9 +208,21 @@ export async function kontaktAusBild(blob, fortschritt) {
     if (mittlereHelligkeit(ctx, W, H) < DUNKEL) invertieren(ctx, W, H);
 
     // 5. Texterkennung blockweise, in Lesereihenfolge
-    const blocke = spaltenSortieren(await textBloecke(canvas, fortschritt));
+    const roheBlocke = await textBloecke(canvas, fortschritt);
+    const blocke = spaltenSortieren(roheBlocke);
     const text = blocke.map((b) => b.text).join('\n\n');
-    const ocrFelder = kontakte.visitenkarteLesen(text);
+    let nebentext = roheBlocke.nebentext || '';
+    let ocrFelder = kontakte.visitenkarteLesen(text, { nebentext });
+    // Deutsche Nummer mit zu wenigen Ziffern („+49 /345 703 57“): auf der bearbeiteten Karte (ausgeschnitten, invertiert) ging vorne etwas
+    // verloren. Dann das ganze Foto noch einmal lesen; dessen Text hilft beim Ergänzen.
+    const kurz = (nr) => /^(?:\+|00)49/.test(nr || '') && String(nr).replace(/\D/g, '').length < 11;
+    if (kurz(ocrFelder.mobil) || kurz(ocrFelder.telefon)) {
+      const foto = flaeche(bitmap.width, bitmap.height);
+      foto.getContext('2d').drawImage(bitmap, 0, 0);
+      const ganz = await textBloecke(foto, fortschritt);
+      nebentext = [nebentext, ganz.map((b) => b.text).join('\n\n'), ganz.nebentext || ''].join('\n\n');
+      ocrFelder = kontakte.visitenkarteLesen(text, { nebentext });
+    }
 
     // 6. Zusammenführen: QR-Werte zuerst, leere Felder aus der Texterkennung
     const felder = leer();
