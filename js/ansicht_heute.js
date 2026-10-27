@@ -1,8 +1,9 @@
 // Ansicht Heute: Kopf, Ring, Knöpfe, Tagesverlauf und Karten.
 // Darstellung nach Entwurf A. Zeit kommt aus kontext.heute und kontext.jetzt, Daten aus kontext.daten.
 import { dauer, dauerMitVorzeichen, uhrzeit, langesDatum, monatsname, wochenbeginn, minutenAusUhrzeit, wochentag } from './zeit.js';
-import { tagesInfo, woche, kontostand, urlaubRest, urlaubAnspruch, hinweise, monat } from './rechnen.js';
+import { tagesInfo, woche, kontostand, urlaubRest, urlaubAnspruch, hinweise, monat, offeneAltbloecke, laufendeBloecke } from './rechnen.js';
 import { stempeln } from './stempeln.js';
+import { speichern, loeschen } from './speicher.js';
 import { tagOeffnen } from './tag_sheet.js';
 import { pcVorschlaege, reiseVorschlaege, pcUebernehmen, verwerfen } from './vorschlaege.js';
 import { reiseOeffnen } from './reise_sheet.js';
@@ -462,16 +463,129 @@ function abgleichEtikettAnbinden(knopf, kontext) {
   window.addEventListener('abgleich-status', abgleichBeobachter);
 }
 
+// Warnsymbol für die Überschriften der Karten oben. Nur das Symbol trägt die Warnfarbe.
+const WARN_SVG = '<svg class="warnsymbol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5v5.5M12 16h.01"/></svg>';
+
+// Ein Svg-Element aus Text (createElement kennt den SVG-Namensraum nicht).
+function svgAus(markup) {
+  const vorlage = document.createElement('template');
+  vorlage.innerHTML = markup;
+  return vorlage.content.firstElementChild;
+}
+
+function kartenTitel(id, text) {
+  return el('h2', { id }, [svgAus(WARN_SVG), el('span', { text })]);
+}
+
+// Karte für einen Block von einem früheren Tag, der nie ausgestempelt wurde: Gehzeit nachtragen.
+function altblockKarte(b, kontext) {
+  const titelId = `k-altblock-${b.id}`;
+  const feldId = `altblock-ende-${b.id}`;
+  const fehlerId = `altblock-fehler-${b.id}`;
+  const eingabe = el('input', { type: 'time', id: feldId, name: 'ende', step: 60 });
+  const fehler = el('p', { klasse: 'notiz feld-fehler', id: fehlerId, hidden: true });
+  eingabe.addEventListener('input', () => fehlerSetzen(eingabe, fehler, ''));
+
+  const sichernKnopf = el('button', { type: 'submit', klasse: 'knopf knopf-haupt knopf-karte', text: 'Sichern' });
+  const tagKnopf = el('button', { type: 'button', klasse: 'knopf knopf-karte', text: 'Tag ansehen' });
+  tagKnopf.addEventListener('click', () => tagOeffnen(b.datum, kontext));
+
+  const form = el('form', { novalidate: true }, [
+    el('p', { text: `Am ${langesDatum(b.datum)} bist du seit ${uhrzeit(b.beginn)} eingestempelt. Wann bist du gegangen?` }),
+    el('div', { klasse: 'feld' }, [
+      el('label', { for: feldId, text: 'Gegangen um' }),
+      eingabe,
+      fehler,
+    ]),
+    el('div', { klasse: 'karte-aktion' }, [sichernKnopf, tagKnopf]),
+  ]);
+
+  let sendet = false;
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    if (sendet) return;
+    const minuten = minutenAusUhrzeit(eingabe.value);
+    if (minuten === null) {
+      fehlerSetzen(eingabe, fehler, 'Bitte eine Uhrzeit wie 17:00 eingeben.');
+      eingabe.focus();
+      return;
+    }
+    if (minuten <= b.beginn) {
+      fehlerSetzen(eingabe, fehler, `Die Uhrzeit muss nach ${uhrzeit(b.beginn)} liegen.`);
+      eingabe.focus();
+      return;
+    }
+    fehlerSetzen(eingabe, fehler, '');
+    sendet = true;
+    sichernKnopf.disabled = true;
+    try {
+      // Die Ansicht zeichnet sich nach dem Speichern neu; die Karte verschwindet dann mit dem Block.
+      await speichern('bloecke', { ...b, ende: minuten, gehen: true });
+    } catch (e) {
+      sendet = false;
+      sichernKnopf.disabled = false;
+      fehlerSetzen(eingabe, fehler, e?.message || 'Speichern fehlgeschlagen. Bitte noch einmal versuchen.');
+      eingabe.focus();
+    }
+  });
+
+  return el('section', { klasse: 'karte breit heute-karte', 'aria-labelledby': titelId }, [
+    kartenTitel(titelId, 'Ausstempeln vergessen'),
+    form,
+  ]);
+}
+
+// Karte, wenn heute mehrere Blöcke gleichzeitig laufen: je Block ein Knopf, der die anderen löscht.
+function mehrfachKarte(liste) {
+  const titelId = 'k-mehrfach';
+  const fehler = el('p', { klasse: 'notiz feld-fehler', role: 'status', hidden: true });
+  const knoepfe = liste.map((b) => {
+    const knopf = el('button', { type: 'button', klasse: 'knopf knopf-karte', text: `Seit ${uhrzeit(b.beginn)} behalten` });
+    knopf.addEventListener('click', async () => {
+      knoepfe.forEach((k) => { k.disabled = true; });
+      try {
+        for (const andere of liste) {
+          if (andere.id !== b.id) await loeschen('bloecke', andere.id);
+        }
+      } catch (e) {
+        knoepfe.forEach((k) => { k.disabled = false; });
+        fehler.textContent = e?.message || 'Das hat nicht geklappt. Bitte noch einmal versuchen.';
+        fehler.hidden = false;
+      }
+    });
+    return knopf;
+  });
+
+  return el('section', { klasse: 'karte breit heute-karte', 'aria-labelledby': titelId }, [
+    kartenTitel(titelId, 'Mehrere laufende Blöcke'),
+    el('p', { text: 'Heute laufen mehrere Blöcke gleichzeitig. Welcher stimmt?' }),
+    el('div', { klasse: 'karte-aktion' }, knoepfe),
+    fehler,
+  ]);
+}
+
+// Karten über dem Ring: je offenem Altblock eine Karte, dazu eine, wenn heute mehrere Blöcke laufen. Ohne Karten fällt der Platz weg.
+function kartenZeichnen(platz, bloecke, heute, kontext) {
+  const karten = offeneAltbloecke(bloecke, heute).map((b) => altblockKarte(b, kontext));
+  const laufend = laufendeBloecke(bloecke, heute);
+  if (laufend.length >= 2) karten.push(mehrfachKarte(laufend));
+  if (karten.length === 0) {
+    platz.remove();
+    return;
+  }
+  platz.replaceChildren(...karten);
+}
+
 export async function zeigen(ziel, kontext) {
   const { heute, jetzt } = kontext;
   const { bloecke, abwesenheiten: abw, einstellungen: einst } = kontext.daten;
 
   const info = tagesInfo(bloecke, abw, einst, heute, jetzt);
-  const tage = woche(bloecke, abw, einst, wochenbeginn(heute), jetzt);
+  const tage = woche(bloecke, abw, einst, wochenbeginn(heute), jetzt, heute);
 
   const jahr = Number(heute.slice(0, 4));
   const monatNr = Number(heute.slice(5, 7));
-  const m = monat(bloecke, abw, einst, jahr, monatNr, jetzt);
+  const m = monat(bloecke, abw, einst, jahr, monatNr, jetzt, heute);
   const konto = kontostand(bloecke, abw, einst, heute);
   const rest = urlaubRest(abw, einst, jahr);
   const anspruch = urlaubAnspruch(einst, jahr);
@@ -493,6 +607,8 @@ export async function zeigen(ziel, kontext) {
       </div>
       <button class="abgleich-etikett" type="button" data-abgleich aria-live="polite" hidden>${ABGLEICH_SVG}<span data-abgleich-text></span></button>
     </header>
+
+    <div class="heute-karten" data-heute-karten></div>
 
     <section class="hero" aria-label="Arbeitszeit heute">
       <div class="ring" role="img" aria-label="${esc(`${dauer(info.ist)} von ${dauer(info.soll)} gearbeitet`)}">
@@ -536,6 +652,9 @@ export async function zeigen(ziel, kontext) {
 
   // Abgleich-Etikett anbinden (Klick und Aktualisierung bei 'abgleich-status')
   abgleichEtikettAnbinden(ziel.querySelector('[data-abgleich]'), kontext);
+
+  // Karten oben: vergessenes Ausstempeln und mehrere laufende Blöcke
+  kartenZeichnen(ziel.querySelector('[data-heute-karten]'), bloecke, heute, kontext);
 
   // Stempeln: während des Aufrufs alle Stempelknöpfe sperren.
   const stempelKnoepfe = [...ziel.querySelectorAll('[data-stempel]')];

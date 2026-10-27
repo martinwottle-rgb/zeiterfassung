@@ -142,3 +142,17 @@
 
 /* Der Browser soll am oberen Rand nicht selbst neu laden */
 html, body { overscroll-behavior-y: contain; }
+
+/* Karten oben auf Heute (vergessenes Ausstempeln, mehrere laufende Blöcke): Tönung wie die Vorschlag-Karte.
+   Die Warnfarbe steckt nur im Symbol der Überschrift. */
+.heute-karten { display: grid; gap: 16px; }
+.karte.heute-karte { background: var(--tint); color: var(--tint-text); border-color: transparent; }
+.karte.heute-karte h2 { display: flex; align-items: center; gap: 10px; color: var(--tint-text); }
+.heute-karte .warnsymbol {
+  flex: none; width: 22px; height: 22px; fill: none; stroke: var(--warnung);
+  stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+}
+.heute-karte p { font-size: 1rem; line-height: 1.4; color: var(--tint-text); }
+.heute-karte .feld > label { color: var(--tint-text); }
+.heute-karte .feld-fehler { color: var(--gefahr); }
+.heute-karte .karte-aktion { margin-top: 14px; }

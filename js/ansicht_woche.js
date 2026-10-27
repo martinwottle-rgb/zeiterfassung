@@ -1,7 +1,7 @@
 // Ansicht Woche: sieben Tage ab Montag, Balken von 6 bis 20 Uhr, Summen unten.
 // Zeit kommt nur aus kontext.heute und kontext.jetzt.
 import { addTage, ausDatumText, datumText, dauer, dauerMitVorzeichen, kalenderwoche, langesDatum, monatsname, wochenbeginn, wochentag } from './zeit.js';
-import { tagesInfo } from './rechnen.js';
+import { woche } from './rechnen.js';
 import { tagOeffnen } from './tag_sheet.js';
 import { pcVorschlaege, pcUebernehmen } from './vorschlaege.js';
 import { zeitSegment } from './zeit_segment.js';
@@ -155,11 +155,7 @@ export async function zeigen(ziel, kontext) {
   const { bloecke, abwesenheiten: abw, einstellungen: einst } = kontext.daten;
 
   const montag = wochenbeginn(gueltigesDatum(kontext.parameter) || heuteText);
-  const tage = [];
-  for (let i = 0; i < 7; i++) {
-    const d = addTage(montag, i);
-    tage.push(tagesInfo(bloecke, abw, einst, d, d === heuteText ? jetzt : undefined));
-  }
+  const tage = woche(bloecke, abw, einst, montag, jetzt, heuteText);
 
   let istSumme = 0;
   let sollSumme = 0;

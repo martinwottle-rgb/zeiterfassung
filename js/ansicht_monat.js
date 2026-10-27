@@ -1,7 +1,7 @@
 // Ansicht Monat: Kennzahlen, Stundenzettel als Tabelle mit Wochensummen, Knopf zum Drucken.
 // Zeit kommt nur aus kontext.heute und kontext.jetzt.
 import { addTage, dauer, dauerMitVorzeichen, kalenderwoche, monatsname, tageImMonat, uhrzeit, wochentag } from './zeit.js';
-import { kontostand, tagesInfo } from './rechnen.js';
+import { kontostand, monat } from './rechnen.js';
 import { tagOeffnen } from './tag_sheet.js';
 import { alle } from './speicher.js';
 import { reisekostenMonat, verpflegung } from './reisen.js';
@@ -168,7 +168,7 @@ export async function zeigen(ziel, kontext) {
   const datums = tageImMonat(jahr, monatNr);
   const erster = datums[0];
   const letzter = datums[datums.length - 1];
-  const tage = datums.map((d) => tagesInfo(bloecke, abw, einst, d, d === heuteText ? jetzt : undefined));
+  const tage = monat(bloecke, abw, einst, jahr, monatNr, jetzt, heuteText).tage;
   const reisen = kontext.daten.reisen ?? await alle('reisen');
   const reise = reisekostenMonat(reisen, jahr, monatNr);
 

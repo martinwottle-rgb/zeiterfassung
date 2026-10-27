@@ -59,21 +59,9 @@ export async function stempeln(aktion, minuten) {
   return nacheinander(() => stempelnZu(aktion, minuten));
 }
 
-// Ein Block, der über Mitternacht läuft, endet gestern um 24:00.
-// Heute beginnt dann ein neuer offener Block um 0:00, falls noch keiner läuft.
+// Früher schloss diese Funktion offene Blöcke um 24:00 und legte um 0:00 einen neuen offenen Block an.
+// Zusammen mit dem normalen Stempeln um 7:25 liefen dann zwei Blöcke (27.10.). Deshalb tut sie nichts mehr.
+// Offene Altblöcke bleiben offen; die Ansicht Heute fragt nach der Austempelzeit. Die Funktion bleibt für alte Aufrufer.
 export async function mitternachtPruefen() {
-  return nacheinander(async () => {
-    const d = heute();
-    const bloecke = await alle('bloecke');
-    const alteOffen = bloecke.filter(b => !b.geloescht && b.ende === null && b.datum < d);
-    if (alteOffen.length === 0) return false;
-    for (const b of alteOffen) {
-      await speichern('bloecke', { ...b, ende: 1440 });
-    }
-    const heuteOffen = bloecke.some(b => !b.geloescht && b.ende === null && b.datum === d);
-    if (!heuteOffen) {
-      await speichern('bloecke', { datum: d, beginn: 0, ende: null, gehen: false, notiz: '' });
-    }
-    return true;
-  });
+  return false;
 }

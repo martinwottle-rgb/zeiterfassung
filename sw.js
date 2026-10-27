@@ -1,7 +1,7 @@
 ﻿// Offline-Zwischenspeicher der Zeiterfassung.
 // Strategie: zuerst das Netz (Ã„nderungen kommen sofort an), bei Fehler der Zwischenspeicher (offline lÃ¤uft die App).
 // /api/ wird nie zwischengespeichert. Bei neuer VERSION werden alte Caches gelÃ¶scht.
-const VERSION = 'z11';
+const VERSION = 'z12';
 const CACHE = 'zeiterfassung-' + VERSION;
 const DATEIEN = [
   './',

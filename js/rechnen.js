@@ -13,6 +13,23 @@ export function bloeckeAm(bloecke, d) {
   return aktiv(bloecke).filter(b => b.datum === d).sort((a, b) => a.beginn - b.beginn);
 }
 
+// Offene Blöcke (ohne Ende) vor `heute`: vergessenes Ausstempeln. Nach Datum, dann Beginn sortiert.
+export function offeneAltbloecke(bloecke, heute) {
+  return aktiv(bloecke)
+    .filter(b => b.ende === null && b.datum < heute)
+    .sort((a, b) => (a.datum !== b.datum ? (a.datum < b.datum ? -1 : 1) : a.beginn - b.beginn));
+}
+
+// Laufende (offene) Blöcke eines Tages, nach Beginn.
+export function laufendeBloecke(bloecke, d) {
+  return bloeckeAm(bloecke, d).filter(b => b.ende === null);
+}
+
+// `jetzt` gilt nur für den Tag `heute`. Ohne `heute` gilt es für alle Tage (wie bisher).
+function jetztFuer(d, jetzt, heute) {
+  return heute === undefined || d === heute ? jetzt : undefined;
+}
+
 // Brutto-Minuten eines Tages (Summe der Blöcke, ohne Pausenabzug). Ein offener Block zählt bis `jetzt`, ohne `jetzt` mit 0.
 export function bruttoMinuten(bloecke, d, jetzt) {
   let summe = 0;
@@ -205,18 +222,19 @@ export function tagesInfo(bloecke, abw, einst, d, jetzt) {
   };
 }
 
-// Sieben Tage ab Montag. `jetzt` reicht der Aufrufer nur für den heutigen Tag weiter.
-export function woche(bloecke, abw, einst, montag, jetzt) {
+// Sieben Tage ab Montag. `jetzt` gilt nur für `heute`; ein offener Block an einem vergangenen Tag zählt 0.
+export function woche(bloecke, abw, einst, montag, jetzt, heute) {
   const tage = [];
   for (let i = 0; i < 7; i++) {
-    tage.push(tagesInfo(bloecke, abw, einst, addTage(montag, i), jetzt));
+    const d = addTage(montag, i);
+    tage.push(tagesInfo(bloecke, abw, einst, d, jetztFuer(d, jetzt, heute)));
   }
   return tage;
 }
 
-// Monatssummen. `monatNr` ist 1 bis 12.
-export function monat(bloecke, abw, einst, jahr, monatNr, jetzt) {
-  const tage = tageImMonat(jahr, monatNr).map(d => tagesInfo(bloecke, abw, einst, d, jetzt));
+// Monatssummen. `monatNr` ist 1 bis 12. Zu `jetzt` und `heute` wie bei `woche`.
+export function monat(bloecke, abw, einst, jahr, monatNr, jetzt, heute) {
+  const tage = tageImMonat(jahr, monatNr).map(d => tagesInfo(bloecke, abw, einst, d, jetztFuer(d, jetzt, heute)));
   let summeIst = 0;
   let summeSoll = 0;
   let saldo = 0;
