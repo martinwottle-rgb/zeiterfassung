@@ -609,7 +609,8 @@ let outlookTimer = null;
 // Bild-Ids eines Kontakts: jedes Feld mit „bild“ im Namen. Notizfotos heißen „Notiz.jpg“, sonst „Visitenkarte.jpg“.
 function kontaktBildIds(k) {
   return Object.entries(k)
-    .filter(([feld, wert]) => /bild/i.test(feld) && typeof wert === 'string' && wert !== '')
+    // Originale vor dem Zuschneiden („bildKarteOriginal“) gehen nicht nach Outlook
+    .filter(([feld, wert]) => /bild/i.test(feld) && !/original$/i.test(feld) && typeof wert === 'string' && wert !== '')
     .map(([feld, id]) => ({ id, name: /notiz/i.test(feld) ? 'Notiz.jpg' : 'Visitenkarte.jpg' }));
 }
 
@@ -625,26 +626,34 @@ function blobAlsBase64(blob) {
   });
 }
 
-// Bilder für den Versand: { id: {name, daten} }. Null, wenn ein Bild noch fehlt (der Kontakt wartet).
-// Fehlt es lokal (Kontakt vom iPhone über den Abgleich), wird es von GitHub geholt. Liefert auch das
-// nichts (iPhone hat es noch nicht hochgeladen) oder schlägt das Holen fehl, bleibt der Kontakt offen.
+// Bilder für den Versand: { bilder: { id: {name, daten} }, fehlt: Anzahl }. Fehlt ein Bild lokal (Kontakt vom iPhone
+// über den Abgleich), wird es von GitHub geholt. Liefert auch das nichts (iPhone hat es noch nicht hochgeladen),
+// geht der Kontakt trotzdem ohne dieses Foto nach Outlook; das Foto wird später nachgereicht (fotoFehlt).
 async function outlookBilder(k) {
   const bilder = {};
+  let fehlt = 0;
   for (const { id, name } of kontaktBildIds(k)) {
     let blob = typeof speicher.bildLaden === 'function' ? await speicher.bildLaden(id) : null;
     if (!blob) {
       try {
         blob = await bildHolen(id, einrichtungLaden());
       } catch (e) {
-        console.warn('Bild nicht geholt, Kontakt wartet', e?.message);
-        return null;
+        console.warn('Bild nicht geholt, Kontakt geht ohne Foto', e?.message);
+        blob = null;
       }
     }
-    if (!blob) return null;
+    if (!blob) {
+      fehlt += 1;
+      continue;
+    }
     bilder[id] = { name, daten: await blobAlsBase64(blob) };
   }
-  return bilder;
+  return { bilder, fehlt };
 }
+
+// Fehlende Fotos höchstens alle 10 Minuten neu versuchen (jeder Versuch fragt GitHub)
+const FOTO_NACHREICHEN_MS = 10 * 60 * 1000;
+const fotoVersuch = new Map(); // Kontakt-id → Zeit des letzten Nachreich-Versuchs
 
 // Ein Durchlauf. Netzfehler: der Rest bleibt offen, der nächste Auslöser versucht es erneut.
 async function outlookLauf() {
@@ -655,16 +664,28 @@ async function outlookLauf() {
     console.error(e);
     return;
   }
-  // Nur von Martin geprüfte Kontakte (geprueft === true) gehen an Outlook
-  const offen = kontakte.filter((k) => !k.geloescht && k.geprueft === true && (!k.outlook || k.outlook.status === 'offen'));
+  // Nur von Martin geprüfte Kontakte (geprueft === true) gehen an Outlook. Dazu kommen übernommene Kontakte,
+  // deren Foto noch fehlte, sobald der letzte Versuch 10 Minuten her ist.
+  const jetzt = Date.now();
+  const fotoNachreichen = (k) => k.outlook?.fotoFehlt && k.outlook.status !== 'offen'
+    && jetzt - (fotoVersuch.get(k.id) ?? 0) >= FOTO_NACHREICHEN_MS;
+  const offen = kontakte.filter((k) => !k.geloescht && k.geprueft === true
+    && (!k.outlook || k.outlook.status === 'offen' || fotoNachreichen(k)));
   for (const k of offen) {
     let antwort;
+    let fehlt = 0;
     try {
-      const bilder = await outlookBilder(k);
-      if (!bilder) continue;
+      const nachreichen = k.outlook?.status !== 'offen' && k.outlook?.fotoFehlt;
+      if (nachreichen) fotoVersuch.set(k.id, jetzt);
+      const erg = await outlookBilder(k);
+      fehlt = erg.fehlt;
+      // Foto fehlt immer noch: nichts Neues zu senden
+      if (nachreichen && fehlt >= k.outlook.fotoFehlt) continue;
+      const bilder = erg.bilder;
       // Eigener Kontakt (vorher angelegt oder aktualisiert, EntryID bekannt): der Server überschreibt ihn.
       // Der Server reicht nur kontakt und bilder weiter, daher stehen eigen und entry_id im kontakt.
-      const { outlook, ...rest } = k;
+      const { outlook: o, ...rest } = k;
+      const outlook = nachreichen ? { ...o, vorher: o.status } : o;
       const eigen = Boolean(outlook?.entryId) && ['angelegt', 'aktualisiert'].includes(outlook?.vorher);
       const kontakt = eigen ? { ...rest, eigen: true, entry_id: outlook.entryId } : rest;
       const antwortRoh = await fetch('/api/outlook-kontakt', {
@@ -687,7 +708,9 @@ async function outlookLauf() {
           status: antwort?.status ?? 'fehler',
           meldung: antwort?.meldung ?? '',
           zeit: Date.now(),
-          entryId: antwort?.entry_id ?? '',
+          entryId: antwort?.entry_id || frisch.outlook?.entryId || '',
+          // Anzahl Fotos, die noch nachgereicht werden (0: alles in Outlook)
+          fotoFehlt: antwort?.status && antwort.status !== 'fehler' ? fehlt : 0,
         },
       });
     } catch (e) {

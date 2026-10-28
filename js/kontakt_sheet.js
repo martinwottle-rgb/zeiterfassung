@@ -78,7 +78,8 @@ function outlookSatz(k) {
   else if (o.status === 'aktualisiert') satz = 'In Outlook aktualisiert';
   else if (o.status === 'fehler') satz = 'Outlook-Fehler';
   else satz = 'Outlook ausstehend, wird am Laptop beim nächsten Abgleich angelegt';
-  return [satz, o.meldung, o.zeit ? `Stand ${zeitText(o.zeit)}` : ''].filter(Boolean).join('. ');
+  const foto = o.fotoFehlt > 0 && o.status !== 'offen' ? 'Kartenfoto folgt, sobald es vom iPhone hochgeladen ist' : '';
+  return [satz, foto, o.meldung, o.zeit ? `Stand ${zeitText(o.zeit)}` : ''].filter(Boolean).join('. ');
 }
 
 // Bild aus dem Speicher; fehlt es hier, aus dem Abgleich, wenn er eingerichtet ist. Sonst null.
