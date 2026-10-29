@@ -10,6 +10,8 @@ import * as erkennung from './kontakt_erkennung.js';
 import { scannen } from './scanner.js';
 import { zuschneiden } from './zuschnitt.js';
 import { uhrzeit } from './zeit.js';
+import { leadBearbeiten } from './lead_sheet.js';
+import * as lead from './lead.js';
 
 const TIPP = 'Tipp: ins Feld tippen, gedrückt halten, Text scannen.';
 const ANLEITUNG = 'Tippe ins Feld, dann auf das Kamera-Symbol über der Tastatur oder halte gedrückt und wähle ‚Text scannen‘. Halte die Kamera auf die Karte und tippe ‚Einsetzen‘.';
@@ -648,7 +650,7 @@ function formularOeffnen(stand, kontext) {
       // Outlook: der bisherige Status merkt sich in vorher, damit eigene Outlook-Kontakte korrigiert werden
       const alt = stand.outlook ?? {};
       const vorher = alt.status === 'offen' ? (alt.vorher ?? '') : (alt.status ?? '');
-      await speichern('kontakte', {
+      const gesichert = await speichern('kontakte', {
         ...(stand.originale ?? {}), // Originale der Fotos bleiben erhalten
         ...daten,
         id: stand.id ?? null,
@@ -659,7 +661,9 @@ function formularOeffnen(stand, kontext) {
         geprueft: true,
         outlook: { status: 'offen', vorher, entryId: alt.entryId ?? '' },
       });
-      kontext.sheet.schliessen();
+      // Neuer Kontakt: gleich fragen, ob ein Lead erfasst werden soll. Bearbeiten schließt wie bisher.
+      if (stand.id) kontext.sheet.schliessen();
+      else leadFrage(gesichert, kontext);
     } catch (e) {
       console.error(e);
       gesamtFehler.textContent = 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.';
@@ -678,6 +682,22 @@ function formularOeffnen(stand, kontext) {
   kontext.sheet.oeffnen(stand.titel, form);
   if (stand.fokus) setTimeout(() => rohFeld.focus(), 0);
   return form;
+}
+
+// Nach dem Sichern eines neuen Kontakts: Rückfrage im selben Sheet, ob gleich ein Lead erfasst wird
+function leadFrage(k, kontext) {
+  const huelle = el('div', 'lead-frage');
+  const frage = el('p', 'notiz', 'Lead erfassen?');
+  const spaeter = el('button', 'knopf', 'Später');
+  spaeter.type = 'button';
+  spaeter.addEventListener('click', () => kontext.sheet.schliessen());
+  const erfassen = el('button', 'knopf haupt', 'Lead erfassen');
+  erfassen.type = 'button';
+  erfassen.addEventListener('click', () => leadBearbeiten(k, kontext));
+  const fuss = el('div', 'kontakt-fuss');
+  fuss.append(spaeter, erfassen);
+  huelle.append(frage, fuss);
+  kontext.sheet.oeffnen('Kontakt gesichert', huelle);
 }
 
 // Visitenkarte mit dem Scanner: Vorder- und Rückseite erkennen, Notiz als Foto. Abbrechen führt zur Auswahl zurück.
@@ -870,6 +890,66 @@ function abschnittKarte(titel, inhalt, klasse = 'kontakt-seite-text') {
   return abschnitt;
 }
 
+// Datum „JJJJ-MM-TT“ als „TT.MM.JJJJ“, sonst leer
+function datumDeutsch(s) {
+  const treffer = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s ?? '');
+  return treffer ? `${treffer[3]}.${treffer[2]}.${treffer[1]}` : '';
+}
+
+// Zeilen des Leads für die Detailseite: [Bezeichnung, Wert]. Leere Angaben fallen weg.
+function leadZeilen(l) {
+  const zeilen = [];
+  const add = (bezeichnung, wert) => {
+    if (wert) zeilen.push([bezeichnung, wert]);
+  };
+  add('Anlass', l.anlass);
+  add('Datum', datumDeutsch(l.datum));
+  add('Branche und Produkte', l.branche);
+  add('Interesse', (l.interesse ?? []).map((i) => (i === 'Sonstiges' && l.interesseSonst ? `Sonstiges: ${l.interesseSonst}` : i)).join(', '));
+  add('Maschine', l.maschine);
+  add('Leistung', l.leistung);
+  add('Menge pro Tag', l.menge);
+  add('Produkt und Anwendung', l.anwendung);
+  if (l.bestehend === 'ja') add('Bestehende Maschine', l.fabrikat ? `Ja, ${l.fabrikat}` : 'Ja');
+  else if (l.bestehend === 'nein') add('Bestehende Maschine', 'Nein');
+  add('Budget', l.budget);
+  add('Nächste Schritte', (l.schritte ?? []).join(', '));
+  if (l.einwilligung === 'ja') add('Einwilligung', 'Ja');
+  else if (l.einwilligung === 'nein') add('Einwilligung', 'Nein');
+  return zeilen;
+}
+
+// Abschnitt Lead: ohne Lead nur der Knopf zum Erfassen, sonst Priorität, Angaben und Knopf zum Bearbeiten
+function leadAbschnitt(k, kontext) {
+  const abschnitt = el('section', 'kontakt-seite-abschnitt');
+  abschnitt.append(el('h2', 'kontakt-seite-ueberschrift', 'Lead'));
+  const l = k.lead ?? {};
+  const leer = lead.leadLeer(l);
+
+  if (!leer) {
+    const prio = lead.LEAD_PRIORITAET.find((p) => p.wert === l.prioritaet);
+    if (prio) {
+      const kopf = el('div', 'lead-kopf');
+      kopf.append(el('span', `lead-prio lead-prio-${prio.wert.toLowerCase()}`, `${prio.wert} ${prio.text}`));
+      abschnitt.append(kopf);
+    }
+    const liste = el('dl', 'kontakt-seite-karte lead-angaben');
+    for (const [bezeichnung, wert] of leadZeilen(l)) {
+      const zeile = el('div', 'kontakt-seite-angabe');
+      const dd = el('dd', null, wert);
+      zeile.append(el('dt', null, bezeichnung), dd);
+      liste.append(zeile);
+    }
+    abschnitt.append(liste);
+  }
+
+  const knopf = el('button', 'knopf lead-knopf', leer ? 'Lead erfassen' : 'Lead bearbeiten');
+  knopf.type = 'button';
+  knopf.addEventListener('click', () => leadBearbeiten(k, kontext));
+  abschnitt.append(knopf);
+  return abschnitt;
+}
+
 // Detailseite eines Kontakts in ziel (bildschirmfüllend, mit Zurück links). kontakt null: nicht (mehr) vorhanden.
 export async function kontaktSeiteZeichnen(ziel, kontakt, kontext) {
   const seite = el('div', 'kontakt-seite');
@@ -943,6 +1023,7 @@ export async function kontaktSeiteZeichnen(ziel, kontakt, kontext) {
   if (ortZeile) adresse.push(['Ort', ortZeile, null]);
   if (k.land) adresse.push(['Land', k.land, null]);
   if (adresse.length) inhalt.append(gruppeListe('Adresse', adresse));
+  inhalt.append(leadAbschnitt(k, kontext));
   if (k.notiz) inhalt.append(abschnittKarte('Notiz', [el('p', null, k.notiz)]));
 
   // Fotos antippen öffnet das große Foto im Sheet (Zuschneiden, Schließen)

@@ -1214,3 +1214,48 @@ label.belege-zeile { cursor: pointer; }
   -webkit-backdrop-filter: var(--glas-filter); backdrop-filter: var(--glas-filter);
 }
 .belege-leiste .knopf:disabled { opacity: .45; cursor: default; transform: none; }
+
+/* Lead */
+.lead-untertitel { margin: -4px 0 0; font-weight: 600; color: var(--text); }
+.lead-block { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.lead-feldname { margin: 0; font-size: .875rem; font-weight: 600; color: var(--text-2); }
+.lead-wahl { display: flex; flex-wrap: wrap; gap: 8px; }
+.lead-umschalter {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 16px;
+  border: 1px solid var(--linie); border-radius: 999px; background: var(--karte); color: var(--text);
+  font: inherit; font-size: .9375rem; font-weight: 600; line-height: 1.2; text-align: center; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 200ms ease, color 200ms ease, transform 120ms ease-out;
+}
+.lead-umschalter:active { transform: scale(.97); }
+.lead-umschalter[aria-pressed="true"] { background: var(--akzent); border-color: transparent; color: var(--akzent-text); }
+.lead-umschalter:focus-visible { outline: 2px solid var(--akzent); outline-offset: 2px; }
+.lead-segment { display: flex; width: 100%; }
+.lead-segment .segment-teil { flex: 1 1 0; min-width: 0; }
+.lead-segment .segment-teil span {
+  display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 10px;
+  white-space: normal; text-align: center; line-height: 1.2;
+}
+.lead-kopf { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 18px; }
+.lead-prio {
+  display: inline-flex; align-items: center; min-height: 32px; padding: 4px 14px; border-radius: 999px;
+  font-size: .875rem; font-weight: 700; line-height: 1.2;
+}
+.lead-prio-a { background: var(--akzent); color: var(--akzent-text); }
+.lead-prio-b { background: var(--warnung); color: var(--karte); }
+.lead-prio-c { background: var(--segment); color: var(--text); }
+.lead-angaben { margin: 0; }
+.lead-knopf { align-self: flex-start; }
+.lead-form .feld[hidden] { display: none; }
+.lead-frage { display: flex; flex-direction: column; gap: 14px; }
+.lead-frage .kontakt-fuss .knopf { width: auto; }
+
+/* Lead in der Kontaktliste */
+.lead-liste-prio {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 22px; height: 22px; margin-right: 10px; border-radius: 50%;
+  font-size: 12px; font-weight: 700; line-height: 1;
+}
+.lead-liste-prio-a { background: var(--akzent); color: var(--akzent-text); }
+.lead-liste-prio-b { background: var(--warnung); color: var(--karte); }
+.lead-liste-prio-c { background: var(--segment); color: var(--text); }

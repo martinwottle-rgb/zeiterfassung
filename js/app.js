@@ -655,6 +655,17 @@ async function outlookBilder(k) {
 const FOTO_NACHREICHEN_MS = 10 * 60 * 1000;
 const fotoVersuch = new Map(); // Kontakt-id → Zeit des letzten Nachreich-Versuchs
 
+// Notiz für Outlook: Kontaktnotiz und Lead-Block. lead.js per dynamischem Import, damit ein Fehler dort die App nicht stoppt.
+async function outlookNotizMitLead(k) {
+  try {
+    const { outlookNotiz } = await import('./lead.js');
+    return outlookNotiz(k.notiz ?? '', k.lead);
+  } catch (e) {
+    console.warn('Lead-Block nicht erstellt', e);
+    return k.notiz ?? '';
+  }
+}
+
 // Ein Durchlauf. Netzfehler: der Rest bleibt offen, der nächste Auslöser versucht es erneut.
 async function outlookLauf() {
   let kontakte;
@@ -687,7 +698,9 @@ async function outlookLauf() {
       const { outlook: o, ...rest } = k;
       const outlook = nachreichen ? { ...o, vorher: o.status } : o;
       const eigen = Boolean(outlook?.entryId) && ['angelegt', 'aktualisiert'].includes(outlook?.vorher);
-      const kontakt = eigen ? { ...rest, eigen: true, entry_id: outlook.entryId } : rest;
+      // Lead-Daten kommen als Block unter die Notiz (Outlook kennt keine Lead-Felder)
+      const mitLead = { ...rest, notiz: await outlookNotizMitLead(rest) };
+      const kontakt = eigen ? { ...mitLead, eigen: true, entry_id: outlook.entryId } : mitLead;
       const antwortRoh = await fetch('/api/outlook-kontakt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

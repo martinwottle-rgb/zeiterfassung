@@ -7,6 +7,7 @@ import { alle } from './speicher.js';
 import { kontaktName } from './kontakte.js';
 import { kontaktErfassen, kontaktSeiteZeichnen, outlookZustand } from './kontakt_sheet.js';
 import { ausDatumText } from './zeit.js';
+import * as lead from './lead.js';
 
 const SORTIERUNGEN = [
   { wert: 'erstellt', text: 'Zuletzt erfasst' },
@@ -14,6 +15,7 @@ const SORTIERUNGEN = [
   { wert: 'vorname', text: 'Vorname' },
   { wert: 'firma', text: 'Firma' },
   { wert: 'ort', text: 'Ort' },
+  { wert: 'prioritaet', text: 'Lead-Priorität' },
 ];
 const MERKEN = 'zeit.kontakteSort';
 const vergleich = new Intl.Collator('de', { sensitivity: 'base', numeric: true });
@@ -44,9 +46,31 @@ function anzahlText(n) {
   return `${n} ${n === 1 ? 'Kontakt' : 'Kontakte'}`;
 }
 
-// Suchtext je Kontakt, klein geschrieben
+// Suchtext je Kontakt, klein geschrieben (inklusive Lead-Kurzzeile und Anlass)
 function suchText(k) {
-  return [kontaktName(k), k.firma, k.ort].filter(Boolean).join(' ').toLocaleLowerCase('de-DE');
+  const leadKurz = lead.leadKurz?.(k.lead) ?? '';
+  return [kontaktName(k), k.firma, k.ort, leadKurz, text(k.lead?.anlass)]
+    .filter(Boolean).join(' ').toLocaleLowerCase('de-DE');
+}
+
+// Priorität des Kontakts als Eintrag aus LEAD_PRIORITAET, sonst null
+function prioritaetVon(k) {
+  const wert = text(k.lead?.prioritaet);
+  return (lead.LEAD_PRIORITAET ?? []).find((p) => p.wert === wert) ?? null;
+}
+
+// Rang der Priorität: A vor B vor C, ohne Priorität ganz hinten
+function prioritaetRang(k) {
+  const i = (lead.LEAD_PRIORITAET ?? []).findIndex((p) => p.wert === text(k.lead?.prioritaet));
+  return i < 0 ? Infinity : i;
+}
+
+// Lead-Priorität: nach Rang, innerhalb nach Name
+function prioritaetVergleich(a, b) {
+  const ra = prioritaetRang(a);
+  const rb = prioritaetRang(b);
+  if (ra !== rb) return ra < rb ? -1 : 1;
+  return namenVergleich(a, b);
 }
 
 // Vergleich über Nachname, dann Vorname (Gleichstand)
@@ -89,6 +113,7 @@ function vergleichFuer(wahl) {
     case 'vorname': return feldVergleich('vorname', true);
     case 'firma': return feldVergleich('firma', false);
     case 'ort': return feldVergleich('ort', false);
+    case 'prioritaet': return prioritaetVergleich;
     default: return erstelltVergleich;
   }
 }
@@ -117,12 +142,21 @@ function wertAbschnitt(s, ohne) {
   return w ? { schluessel: `w:${w.toLocaleLowerCase('de-DE')}`, titel: w } : { schluessel: 'ohne', titel: ohne };
 }
 
+// Abschnitt nach Lead-Priorität: „A Hot Lead“, „B Potenzial“, „C Information“, sonst „Ohne Priorität“
+function prioritaetAbschnitt(k) {
+  const p = prioritaetVon(k);
+  return p
+    ? { schluessel: `p:${p.wert}`, titel: `${p.wert} ${p.text}` }
+    : { schluessel: 'ohne', titel: 'Ohne Priorität' };
+}
+
 function abschnittVon(k, wahl, heuteTag) {
   switch (wahl) {
     case 'nachname': return buchstabenAbschnitt(k.nachname);
     case 'vorname': return buchstabenAbschnitt(k.vorname);
     case 'firma': return wertAbschnitt(k.firma, 'Ohne Firma');
     case 'ort': return wertAbschnitt(k.ort, 'Ohne Ort');
+    case 'prioritaet': return prioritaetAbschnitt(k);
     default: return erfassungsAbschnitt(k.erstellt, heuteTag);
   }
 }
@@ -141,6 +175,19 @@ function zeileBauen(k, wahl) {
   const zeile = document.createElement('a');
   zeile.href = '#kontakte/' + encodeURIComponent(k.id);
   zeile.className = 'liste-zeile kontakt-zeile';
+
+  // Lead-Priorität als rundes Etikett links; ohne Priorität gibt es keines
+  const p = prioritaetVon(k);
+  if (p) {
+    const etikett = document.createElement('span');
+    etikett.className = `lead-liste-prio lead-liste-prio-${p.wert.toLowerCase()}`;
+    etikett.textContent = p.wert;
+    etikett.setAttribute('aria-hidden', 'true');
+    const sr = document.createElement('span');
+    sr.className = 'nur-sr';
+    sr.textContent = `Priorität ${p.wert}, ${p.text}`;
+    zeile.append(etikett, sr);
+  }
 
   const textBlock = document.createElement('span');
   textBlock.className = 'liste-text';
