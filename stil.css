@@ -1007,6 +1007,7 @@ a.segment-teil:focus-visible { outline: 2px solid var(--akzent); outline-offset:
   background: rgba(40, 38, 38, .6); color: #fff; font: inherit; font-size: 1rem; font-weight: 600; cursor: pointer;
   -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
 }
+.scanner-schalter-gruppe { display: flex; align-items: center; gap: 14px; }
 .scanner-schalter {
   display: inline-flex; align-items: center; gap: 10px; min-height: 44px;
   color: #fff; font-size: 1rem; font-weight: 600; cursor: pointer;

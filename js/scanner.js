@@ -160,6 +160,14 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
     let beendet = false;
     let ausgeblendet = false;
     let auto = true; // löst nur bei sicherer Erkennung (Wert ab 0,6) aus
+    // Rahmensuche an oder aus, je Scanner-Art gemerkt (Karte, Beleg). Aus: kein roter Rahmen, das ganze Bild wird übernommen.
+    const RAHMEN_SCHLUESSEL = `scanner.rahmen.${wort}`;
+    let rahmenAn = true;
+    try {
+      rahmenAn = localStorage.getItem(RAHMEN_SCHLUESSEL) !== 'aus';
+    } catch {
+      // ohne Speicher: an
+    }
     let gesperrt = false; // nach einer Auto-Aufnahme erst wieder, wenn die Karte weg war
     let fehlt = 0;
     let letzteEcken = null; // in Pixeln von det
@@ -204,12 +212,21 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
     schalter.type = 'checkbox';
     schalter.checked = true;
     schalter.setAttribute('role', 'switch');
-    const schalterWort = el('span', null, 'Automatisch');
+    const schalterWort = el('span', null, 'Auto');
     const schalterFeld = el('label', 'scanner-schalter');
     schalterFeld.append(schalter, schalterWort);
     schalterFeld.hidden = true;
+    const rahmenSchalter = document.createElement('input');
+    rahmenSchalter.type = 'checkbox';
+    rahmenSchalter.checked = rahmenAn;
+    rahmenSchalter.setAttribute('role', 'switch');
+    const rahmenFeld = el('label', 'scanner-schalter');
+    rahmenFeld.append(rahmenSchalter, el('span', null, 'Rahmen'));
+    rahmenFeld.hidden = true;
+    const schalterGruppe = el('div', 'scanner-schalter-gruppe');
+    schalterGruppe.append(rahmenFeld, schalterFeld);
     const kopf = el('div', 'scanner-kopf');
-    kopf.append(abbrechen, schalterFeld);
+    kopf.append(abbrechen, schalterGruppe);
 
     const hinweis = el('p', 'scanner-hinweis');
     hinweis.setAttribute('role', 'status');
@@ -277,7 +294,7 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
       let text;
       if (modus === 'start') text = 'Kamera wird eingeschaltet …';
       else if (modus === 'datei') text = `Ein Foto ${ohneRahmen() ? 'der Notiz' : wort === 'Karte' ? 'der Karte' : 'des Belegs'} wählen.`;
-      else if (ohneRahmen()) text = 'Notiz ins Bild halten. Zum Aufnehmen auf den Knopf tippen, das ganze Bild wird übernommen.';
+      else if (ohneRahmen()) text = `${rolle === 'Notiz' ? 'Notiz' : wort} ins Bild halten. Zum Aufnehmen auf den Knopf tippen, das ganze Bild wird übernommen.`;
       else if (kanteFehlt) text = `${wort} ins Bild halten. Zum Aufnehmen auf den Knopf tippen.`;
       else if (video.readyState < 2) text = 'Kamera wird eingeschaltet …';
       else if (!bereit) text = 'Erkennung wird geladen …';
@@ -289,7 +306,14 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
     }
 
     // Notizen sind Zettel beliebiger Form: keine Kartensuche, das ganze Bild wird übernommen
-    function ohneRahmen() { return rolle === 'Notiz'; }
+    function ohneRahmen() { return rolle === 'Notiz' || !rahmenAn; }
+
+    // Schalter nur mit Kamera; „Rahmen“ nicht bei Notiz (dort immer aus), „Auto“ nur mit Rahmen
+    function schalterZeichnen() {
+      const kamera = modus === 'kamera';
+      rahmenFeld.hidden = !kamera || rolle === 'Notiz';
+      schalterFeld.hidden = !kamera || ohneRahmen();
+    }
 
     function rollenZeichnen() {
       if (ohneRahmen() && letzteEcken) {
@@ -297,6 +321,7 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
         ruheEcken = null;
         rahmenZeichnen();
       }
+      schalterZeichnen();
       rollenKnoepfe.forEach((knopf, i) => knopf.setAttribute('aria-pressed', String(rollen[i] === rolle)));
       ausloeser.setAttribute('aria-label', modus === 'datei' ? `Foto als ${rolle} wählen` : `Foto als ${rolle} aufnehmen`);
     }
@@ -573,7 +598,7 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
       if (beendet) return;
       if (mitKamera) {
         modus = 'kamera';
-        schalterFeld.hidden = false;
+        schalterZeichnen();
       } else {
         modus = 'datei';
         ohneKamera.hidden = false;
@@ -611,6 +636,15 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
     abbrechen.addEventListener('click', () => beenden(null));
     schalter.addEventListener('change', () => {
       auto = schalter.checked;
+    });
+    rahmenSchalter.addEventListener('change', () => {
+      rahmenAn = rahmenSchalter.checked;
+      try {
+        localStorage.setItem(RAHMEN_SCHLUESSEL, rahmenAn ? 'an' : 'aus');
+      } catch {
+        // nicht gemerkt, gilt für diesen Scan
+      }
+      rollenZeichnen();
     });
     ausloeser.addEventListener('click', () => {
       if (modus === 'datei') dateiEingabe.click();
