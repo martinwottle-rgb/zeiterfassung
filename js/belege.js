@@ -18,7 +18,7 @@ const AUSSCHLUSS = /(?<!\p{L})(?:mwst|ust|steuer|netto|gegeben|rückgeld|rueckge
 const SUMMEN_WORTE = /(?<!\p{L})(?:summe|gesamt|total|betrag|zu zahlen|endbetrag|brutto|toplam|amount|tutar)/iu;
 // Straße oder Hausnummer am Ende, damit die Zeile nicht als Händler gilt
 const STRASSE = /stra(?:ß|ss)e(?!\p{L})|str\.|(?:weg|platz|allee|gasse|ring|damm|ufer)(?!\p{L})/iu;
-// Kartennummern mit den letzten 4 Ziffern, z. B. '**** 0006', '************1234', 'XXXX1234'
+// Kartennummern mit den letzten 4 Ziffern, z. B. '**** 4321', '************1234', 'XXXX1234'
 const KARTE_NR = /(?<!\p{L})[*x]{2}[*x\s]*(\d{4})(?!\d)/giu;
 // Zahlungswörter (ganze Wörter, Kleinschreibung über zahlKlein)
 const BAR_WOERTER = ['bar', 'barzahlung', 'gegeben', 'rückgeld', 'rueckgeld', 'wechselgeld', 'cash', 'nakit'];
