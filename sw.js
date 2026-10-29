@@ -1,7 +1,7 @@
 ﻿// Offline-Zwischenspeicher der Zeiterfassung.
 // Strategie: zuerst das Netz (Ã„nderungen kommen sofort an), bei Fehler der Zwischenspeicher (offline lÃ¤uft die App).
 // /api/ wird nie zwischengespeichert. Bei neuer VERSION werden alte Caches gelÃ¶scht.
-const VERSION = 'z23';
+const VERSION = 'z24';
 const CACHE = 'zeiterfassung-' + VERSION;
 const DATEIEN = [
   './',
@@ -47,6 +47,7 @@ const DATEIEN = [
   './js/lead.js',
   './js/lead_sheet.js',
   './js/belege.js',
+  './js/kurs.js',
   './js/beleg_pdf.js',
   './js/beleg_sheet.js',
   './js/ansicht_belege.js',

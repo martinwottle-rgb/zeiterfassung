@@ -2,13 +2,14 @@
 // Neue Seiten werden erst beim Sichern im Speicher abgelegt, damit Abbrechen keine Bilder ohne Beleg hinterlässt.
 // Scannen, Zuschneiden und Erkennung ersetzen das Sheet; der Stand des Formulars wird deshalb vorher gelesen
 // und danach wieder aufgebaut.
-import { alle, bildLaden, bildSpeichern, loeschen, speichern } from './speicher.js';
+import { alle, bildLaden, bildSpeichern, einstellungenLaden, loeschen, speichern } from './speicher.js';
 import { KATEGORIEN, belegLesen, betragLesen, reiseAm } from './belege.js';
 import { pdfErsteSeite } from './beleg_pdf.js';
 import { textErkennen } from './ocr.js';
 import { scannen } from './scanner.js';
 import { BELEG_SEITEN } from './kantenerkennung.js';
 import { zuschneiden } from './zuschnitt.js';
+import { kursHolen } from './kurs.js';
 
 const BILD_AUSWAHL = 'image/*,.heic,.heif';
 const PDF_AUSWAHL = 'application/pdf,.pdf';
@@ -20,11 +21,39 @@ const SCAN = { seiten: ['Seite 1', 'Seite 2', 'Seite 3', 'Seite 4'], seitenVerha
 const HINWEIS_NICHT_ERKANNT = 'Text nicht erkannt. Bitte Datum und Betrag eintragen.';
 const HINWEIS_GELESEN = 'Aus dem Beleg gelesen, bitte prüfen';
 const SPEICHERN_FEHLER = 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.';
+const ZAHLUNG_KARTE = 'karte';
+const ZAHLUNG_BAR = 'bar';
+const HINWEIS_KURS_FEHLT = 'Kurs nicht abrufbar, bitte Euro-Betrag eintragen.';
+const FEHLER_EURO = 'Euro-Betrag als Zahl, z. B. 12,50';
 
 // Kategorien als Namen für die Auswahl (falls belege.js Objekte liefert, deren Name)
 const KATEGORIE_NAMEN = KATEGORIEN.map((k) => (typeof k === 'string' ? k : (k.name ?? k.text ?? k.wert)));
 
-const leereFelder = () => ({ datum: '', betrag: '', waehrung: 'EUR', kategorie: '', haendler: '', beschreibung: '' });
+const leereFelder = () => ({
+  datum: '',
+  betrag: '',
+  waehrung: 'EUR',
+  zahlung: ZAHLUNG_KARTE,
+  betragEur: '',
+  kurs: null,
+  kursDatum: '',
+  eurAuto: '',
+  kategorie: '',
+  haendler: '',
+  beschreibung: '',
+});
+
+// Zahlungsart aus Erkennung oder Beleg: nur „bar“ zählt, alles andere ist Firmenkarte
+const zahlungVon = (z) => (z === ZAHLUNG_BAR ? ZAHLUNG_BAR : ZAHLUNG_KARTE);
+
+// Datum 'YYYY-MM-DD' als 'TT.MM.JJJJ'
+const datumDeutsch = (iso) => {
+  const [j, m, t] = String(iso ?? '').split('-');
+  return j && m && t ? `${t}.${m}.${j}` : '';
+};
+
+// Kurs mit Komma, mindestens zwei, höchstens vier Nachkommastellen
+const kursText = (n) => n.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
 function el(tag, klasse, text) {
   const e = document.createElement(tag);
@@ -45,6 +74,7 @@ function felderAus(b) {
     datum: b.datum ?? '',
     betrag: betragAnzeige(b.betrag),
     waehrung: WAEHRUNGEN.includes(b.waehrung) ? b.waehrung : 'EUR',
+    zahlung: zahlungVon(b.zahlung),
     kategorie: b.kategorie ?? '',
     haendler: b.haendler ?? '',
     beschreibung: '',
@@ -143,7 +173,7 @@ async function fotosZuschneiden(dateien, kontext) {
 }
 
 // Ergebnis ohne Erkennung (Fehler oder kein Text)
-const leerErgebnis = () => ({ felder: null, text: '', fehler: HINWEIS_NICHT_ERKANNT });
+const leerErgebnis = () => ({ felder: null, text: '', fehler: HINWEIS_NICHT_ERKANNT, zahlungSicher: true });
 
 // Fortschritt der Erkennung im Sheet. Liefert die Rückruffunktion für textErkennen.
 function fortschrittZeigen(kontext) {
@@ -165,6 +195,17 @@ function fortschrittZeigen(kontext) {
   };
 }
 
+// Letzte Ziffern der Firmenkarte aus den Einstellungen (Feld kann fehlen)
+async function kartenEndeLesen() {
+  try {
+    const einstellungen = await einstellungenLaden();
+    return String(einstellungen?.kartenEnde ?? '');
+  } catch (e) {
+    console.warn('Einstellungen nicht geladen', e?.message);
+    return '';
+  }
+}
+
 // Erste Seite lesen (bei PDF deren erste Seite). Fehler kommen als Hinweis zurück, nie als Wurf.
 async function erkennungLaufen(seiten, kontext) {
   const zeigen = fortschrittZeigen(kontext);
@@ -174,8 +215,14 @@ async function erkennungLaufen(seiten, kontext) {
     const bild = (await istPdf(blob)) ? await pdfErsteSeite(blob) : blob;
     const text = (await textErkennen(bild, zeigen)) ?? '';
     if (!text.trim()) return leerErgebnis();
-    const gelesen = await belegLesen(text, { heute: kontext.heute });
-    return { felder: felderAus(gelesen ?? {}), text, fehler: '' };
+    const kartenEnde = await kartenEndeLesen();
+    const gelesen = (await belegLesen(text, { heute: kontext.heute, kartenEnde })) ?? {};
+    return {
+      felder: felderAus(gelesen),
+      text,
+      fehler: '',
+      zahlungSicher: gelesen.zahlungSicher !== false,
+    };
   } catch (e) {
     console.error(e);
     return leerErgebnis();
@@ -205,6 +252,11 @@ function formularOeffnen(stand, kontext) {
   const hinweis = el('p', 'notiz beleg-hinweis', stand.hinweis ?? '');
   hinweis.setAttribute('role', 'status');
   hinweis.hidden = !stand.hinweis;
+
+  // Euro-Betrag bei Barzahlung in Fremdwährung: eigener Stand, damit er beim Neuaufbau des Sheets erhalten bleibt
+  let kursAktuell = werte.kurs != null && werte.kursDatum ? { kurs: Number(werte.kurs), datum: werte.kursDatum } : null;
+  let eurAuto = werte.eurAuto ?? '';
+  let kursNr = 0;
 
   const gesamtFehler = el('p', 'fehler beleg-gesamt');
   gesamtFehler.setAttribute('role', 'alert');
@@ -238,6 +290,11 @@ function formularOeffnen(stand, kontext) {
       datum: datumEl.value,
       betrag: betragEl.value,
       waehrung: waehrungEl.value,
+      zahlung: zahlungWert(),
+      betragEur: eurEl.value,
+      kurs: kursAktuell?.kurs ?? null,
+      kursDatum: kursAktuell?.datum ?? '',
+      eurAuto,
       kategorie: kategorieEl.value,
       haendler: haendlerEl.value,
       beschreibung: beschreibungEl.value,
@@ -376,13 +433,126 @@ function formularOeffnen(stand, kontext) {
   beschreibungEl.placeholder = 'z. B. Tanken 207354 km S-AB1234';
   beschreibungEl.value = werte.beschreibung;
 
+  // Bezahlt mit: genau eine Wahl, Firmenkarte oder Bar / privat
+  let zahlungAktuell = zahlungVon(werte.zahlung);
+  const zahlungHuelle = el('div', 'segment beleg-zahlung');
+  zahlungHuelle.setAttribute('role', 'group');
+  zahlungHuelle.setAttribute('aria-label', 'Bezahlt mit');
+  const zahlungKnoepfe = [
+    [ZAHLUNG_KARTE, 'Firmenkarte'],
+    [ZAHLUNG_BAR, 'Bar / privat'],
+  ].map(([wert, text]) => {
+    const knopf = el('button', 'segment-teil');
+    knopf.type = 'button';
+    knopf.dataset.wert = wert;
+    knopf.append(el('span', null, text));
+    knopf.addEventListener('click', () => {
+      zahlungAktuell = wert;
+      zahlungZeichnen();
+      zahlungGeaendert();
+    });
+    return knopf;
+  });
+  function zahlungZeichnen() {
+    for (const knopf of zahlungKnoepfe) knopf.setAttribute('aria-pressed', String(knopf.dataset.wert === zahlungAktuell));
+  }
+  zahlungZeichnen();
+  zahlungHuelle.append(...zahlungKnoepfe);
+  const zahlungWert = () => zahlungAktuell;
+  const zahlungUnsicher = el('p', 'notiz beleg-unsicher-hinweis', 'bitte prüfen');
+  zahlungUnsicher.id = 'beleg-zahlung-unsicher';
+  zahlungUnsicher.hidden = true;
+  const zahlungFehler = el('p', 'notiz fehler');
+  zahlungFehler.id = 'beleg-zahlung-fehler';
+  zahlungFehler.hidden = true;
+  zahlungHuelle.setAttribute('aria-describedby', zahlungFehler.id);
+  const zahlungBox = el('div', 'feld beleg-zahlung-feld');
+  zahlungBox.append(el('p', 'feld-name', 'Bezahlt mit'), zahlungHuelle, zahlungUnsicher, zahlungFehler);
+  const zahlungF = { box: zahlungBox, input: zahlungHuelle, fehler: zahlungFehler, unsicher: zahlungUnsicher };
+
+  // Betrag in Euro: nur bei Barzahlung in Fremdwährung. Wird aus Betrag und Kurs vorbelegt, bis Martin selbst etwas einträgt.
+  const eurEl = document.createElement('input');
+  eurEl.type = 'text';
+  eurEl.id = 'beleg-betrag-eur';
+  eurEl.name = 'betragEur';
+  eurEl.inputMode = 'decimal';
+  eurEl.autocomplete = 'off';
+  eurEl.value = werte.betragEur ?? '';
+  const eurF = feldBauen('Betrag in Euro', eurEl);
+  const kursHinweis = el('p', 'notiz beleg-kurs');
+  kursHinweis.setAttribute('role', 'status');
+  const eurBox = el('div', 'beleg-eur');
+  eurBox.append(eurF.box, kursHinweis);
+  eurBox.hidden = true;
+
+  // Barzahlung in Fremdwährung?
+  const fremdBar = () => zahlungWert() === ZAHLUNG_BAR && waehrungEl.value !== 'EUR';
+  const kursSatz = (k, waehrung) => `Kurs vom ${datumDeutsch(k.datum)}: 1 EUR = ${kursText(k.kurs)} ${waehrung} (EZB)`;
+
+  // Kurs holen (immer neu, veraltete Antworten werden verworfen) und Euro-Betrag vorbelegen, wenn das Feld frei ist
+  async function eurRechnen() {
+    const nr = ++kursNr;
+    if (!fremdBar()) {
+      eurBox.hidden = true;
+      kursAktuell = null;
+      kursHinweis.textContent = '';
+      return;
+    }
+    eurBox.hidden = false;
+    const waehrung = waehrungEl.value;
+    const k = await kursHolen(waehrung, datumEl.value);
+    if (nr !== kursNr) return;
+    kursAktuell = k ? { kurs: k.kurs, datum: k.datum } : null;
+    const betrag = betragLesen(betragEl.value.trim());
+    const frei = eurEl.value.trim() === '' || eurEl.value === eurAuto;
+    if (!k) {
+      kursHinweis.textContent = HINWEIS_KURS_FEHLT;
+      if (frei) eurEl.value = '';
+      eurAuto = '';
+      return;
+    }
+    kursHinweis.textContent = kursSatz(k, waehrung);
+    if (frei) {
+      eurEl.value = betrag == null || Number.isNaN(betrag) ? '' : betragAnzeige(Math.round((betrag / k.kurs) * 100) / 100);
+      eurAuto = eurEl.value;
+    }
+  }
+
+  // Beim Öffnen: gespeicherter Kurs bleibt stehen, sonst frisch holen
+  function eurStart() {
+    if (fremdBar() && kursAktuell) {
+      eurBox.hidden = false;
+      kursHinweis.textContent = kursSatz(kursAktuell, waehrungEl.value);
+      return;
+    }
+    eurRechnen();
+  }
+
+  // Ändert sich die Zahlungsart, ist das Feld geprüft; Euro-Betrag und Kurs laufen neu
+  function zahlungGeaendert() {
+    if (offen.has('zahlung')) {
+      offen.delete('zahlung');
+      unsicherSetzen(zahlungF, false);
+    }
+    eurRechnen();
+  }
+
   const datumF = feldBauen('Datum', datumEl);
   const betragF = feldBauen('Betrag', betragEl);
   const waehrungF = feldBauen('Währung', waehrungEl);
   const kategorieF = feldBauen('Kategorie', kategorieEl);
   const haendlerF = feldBauen('Händler', haendlerEl);
   const beschreibungF = feldBauen('Beschreibung', beschreibungEl);
-  const felderMap = { datum: datumF, betrag: betragF, waehrung: waehrungF, kategorie: kategorieF, haendler: haendlerF, beschreibung: beschreibungF };
+  const felderMap = {
+    datum: datumF,
+    betrag: betragF,
+    waehrung: waehrungF,
+    zahlung: zahlungF,
+    betragEur: eurF,
+    kategorie: kategorieF,
+    haendler: haendlerF,
+    beschreibung: beschreibungF,
+  };
 
   const betragZeile = el('div', 'beleg-betrag');
   betragZeile.append(betragF.box, waehrungF.box);
@@ -396,6 +566,12 @@ function formularOeffnen(stand, kontext) {
       unsicherSetzen(f, false);
     });
   }
+
+  // Betrag, Währung, Datum ändern den Euro-Betrag neu
+  betragEl.addEventListener('input', () => eurRechnen());
+  waehrungEl.addEventListener('change', () => eurRechnen());
+  datumEl.addEventListener('input', () => eurRechnen());
+  datumEl.addEventListener('change', () => eurRechnen());
 
   // Reisetag unter dem Datum: Dienstreise, wenn das Datum in eine Reise fällt
   const reiseZeile = el('p', 'notiz beleg-reise');
@@ -520,6 +696,16 @@ function formularOeffnen(stand, kontext) {
       return;
     }
 
+    // Euro-Betrag nur bei Barzahlung in Fremdwährung; Text, der keine Zahl ist, bekommt einen Fehler am Feld
+    const barFremd = fremdBar();
+    const roheEur = eurEl.value.trim();
+    const eurWert = barFremd && roheEur !== '' ? betragLesen(roheEur) : null;
+    if (barFremd && roheEur !== '' && (eurWert == null || Number.isNaN(eurWert))) {
+      fehlerSetzen(eurF, FEHLER_EURO);
+      eurEl.focus();
+      return;
+    }
+
     beschaeftigt = true;
     sichernKnopf.disabled = true;
     try {
@@ -531,6 +717,10 @@ function formularOeffnen(stand, kontext) {
         datum: datumEl.value,
         betrag: betragWert,
         waehrung: waehrungEl.value,
+        zahlung: zahlungWert(),
+        betragEur: barFremd ? eurWert : null,
+        kurs: barFremd && kursAktuell ? kursAktuell.kurs : null,
+        kursDatum: barFremd && kursAktuell ? kursAktuell.datum : '',
         kategorie: kategorieEl.value,
         haendler: haendlerEl.value.trim(),
         beschreibung: beschreibungEl.value.trim(),
@@ -562,6 +752,8 @@ function formularOeffnen(stand, kontext) {
     datumF.box,
     reiseZeile,
     betragZeile,
+    zahlungBox,
+    eurBox,
     kategorieF.box,
     haendlerF.box,
     beschreibungF.box,
@@ -574,6 +766,7 @@ function formularOeffnen(stand, kontext) {
   streifenZeichnen();
   reisePruefen();
   tankenVorbelegen();
+  eurStart();
   kontext.sheet.oeffnen(stand.titel, form);
   // Das Sheet fokussiert das erste Eingabefeld; das ist hier der versteckte Datei-Knopf, deshalb nach vorn holen
   setTimeout(() => datumEl.focus({ preventScroll: true }), 0);
@@ -649,7 +842,10 @@ async function erkennenUndFormular(seiten, kontext, zusatz = '') {
     felder,
     text: erg.text,
     hinweis: [zusatz, erg.fehler].filter(Boolean).join(' ') || HINWEIS_GELESEN,
-    unsicher: ['datum', 'betrag'].filter((k) => !felder[k]),
+    unsicher: [
+      ...['datum', 'betrag'].filter((k) => !felder[k]),
+      ...(erg.zahlungSicher === false ? ['zahlung'] : []),
+    ],
   }, kontext);
 }
 
@@ -666,6 +862,10 @@ export function belegBearbeiten(beleg, kontext) {
       datum: beleg.datum ?? '',
       betrag: betragAnzeige(beleg.betrag),
       waehrung: beleg.waehrung ?? 'EUR',
+      zahlung: zahlungVon(beleg.zahlung),
+      betragEur: beleg.betragEur == null ? '' : betragAnzeige(beleg.betragEur),
+      kurs: beleg.kurs ?? null,
+      kursDatum: beleg.kursDatum ?? '',
       kategorie: beleg.kategorie ?? '',
       haendler: beleg.haendler ?? '',
       beschreibung: beleg.beschreibung ?? '',

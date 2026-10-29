@@ -395,6 +395,25 @@ export async function zeigen(ziel, kontext) {
     sichern('ein-arbeitsort', () => ({ arbeitsort: arbeitsortEingabe.value.trim() }));
   });
 
+  // Endziffern der Firmenkarte: Belege mit dieser Karte gehen in die Kreditkartenabrechnung, andere Karten gelten als privat
+  const kartenEingabe = el('input', {
+    type: 'text',
+    id: 'ein-karten-ende',
+    name: 'kartenEnde',
+    autocomplete: 'off',
+    inputmode: 'numeric',
+    maxlength: '4',
+    placeholder: '0000',
+    value: einst.kartenEnde ?? '',
+    klasse: 'einstellung-eingabe',
+  });
+  const kartenZeile = zeile('ein-karten-ende', 'Endziffern Firmenkarte', kartenEingabe);
+  kartenEingabe.addEventListener('change', () => {
+    const wert = kartenEingabe.value.replace(/\D/g, '').slice(-4);
+    kartenEingabe.value = wert;
+    sichern('ein-karten-ende', () => ({ kartenEnde: wert }));
+  });
+
   // Pause: gesetzliche Pause abziehen (Schalter)
   const pauseSchalter = el('input', {
     type: 'checkbox',
@@ -762,6 +781,12 @@ export async function zeigen(ziel, kontext) {
       }),
     ]),
     kontakteGruppe(),
+    gruppe('Belege', [kartenZeile.element], [
+      el('p', {
+        klasse: 'gruppe-fuss',
+        text: 'Belege mit dieser Karte kommen in die Kreditkartenabrechnung. Bar oder mit einer anderen Karte bezahlt gilt als privat vorgestreckt und kommt in die Reisekostentabelle.',
+      }),
+    ]),
     gruppe('Sollzeit', sollZeilen, [sollFuss]),
     gruppe('Pause', [pauseZeile.element], [
       el('p', {

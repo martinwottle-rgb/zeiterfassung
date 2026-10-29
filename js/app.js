@@ -507,7 +507,15 @@ async function laptopErmitteln() {
   try {
     const antwort = await fetch('/api/status', { cache: 'no-store' });
     if (!antwort.ok) return false;
-    return (await antwort.json()).laptop === true;
+    const status = await antwort.json();
+    // Lokale Vorgaben des Laptops (laptop/lokal.json, nie im öffentlichen Code): nur leere Einstellungen füllen,
+    // der Abgleich bringt sie dann aufs iPhone
+    const ende = String(status.kartenEnde ?? '').replace(/\D/g, '');
+    if (ende) {
+      const einst = await einstellungenLaden();
+      if (!einst.kartenEnde) await einstellungenSpeichern({ ...einst, kartenEnde: ende });
+    }
+    return status.laptop === true;
   } catch {
     return false; // kein Laptop-Server
   }

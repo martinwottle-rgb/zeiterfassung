@@ -18,6 +18,12 @@ const AUSSCHLUSS = /(?<!\p{L})(?:mwst|ust|steuer|netto|gegeben|rückgeld|rueckge
 const SUMMEN_WORTE = /(?<!\p{L})(?:summe|gesamt|total|betrag|zu zahlen|endbetrag|brutto|toplam|amount|tutar)/iu;
 // Straße oder Hausnummer am Ende, damit die Zeile nicht als Händler gilt
 const STRASSE = /stra(?:ß|ss)e(?!\p{L})|str\.|(?:weg|platz|allee|gasse|ring|damm|ufer)(?!\p{L})/iu;
+// Kartennummern mit den letzten 4 Ziffern, z. B. '**** 0006', '************1234', 'XXXX1234'
+const KARTE_NR = /(?<!\p{L})[*x]{2}[*x\s]*(\d{4})(?!\d)/giu;
+// Zahlungswörter (ganze Wörter, Kleinschreibung über zahlKlein)
+const BAR_WOERTER = ['bar', 'barzahlung', 'gegeben', 'rückgeld', 'rueckgeld', 'wechselgeld', 'cash', 'nakit'];
+const KARTE_WOERTER = ['kartenzahlung', 'karte', 'kreditkarte', 'visa', 'mastercard', 'maestro', 'amex', 'american express',
+  'girocard', 'ec-karte', 'debit', 'contactless', 'kontaktlos', 'card', 'kredi kartı'];
 
 // Währungen in der Reihenfolge der Prüfung
 const WAEHRUNGEN = [
@@ -122,18 +128,43 @@ function kategorieAus(text) {
   return '';
 }
 
-// Beleg aus Text lesen. heute: 'YYYY-MM-DD' (Vorgabe: heutiges Datum)
-export function belegLesen(text, { heute = heuteIso() } = {}) {
+// Kleinschreibung für Zahlungswörter: İ, I und ı zuerst zu i (Türkisch), danach klein
+const zahlKlein = (s) => String(s ?? '').replace(/[İIı]/g, 'i').toLowerCase();
+
+// Ganzes Wort im (bereits kleingeschriebenen) Text?
+const wortIn = (text, wort) => new RegExp(`(?<!\\p{L})${esc(zahlKlein(wort))}(?!\\p{L})`, 'u').test(text);
+
+// Zahlungsart aus dem Text: 'karte' oder 'bar'; sicher, wenn ein Hinweis gefunden wurde.
+// kartenEnde: letzte 4 Ziffern der Firmenkarte. Passt eine andere Kartennummer, ist es eine private Karte (bar).
+export function zahlungLesen(text, { kartenEnde = '' } = {}) {
+  const t = String(text ?? '');
+  const ende = String(kartenEnde ?? '').trim();
+  const nummern = [...t.matchAll(KARTE_NR)].map((m) => m[1]);
+  if (nummern.length) {
+    if (!ende) return { zahlung: 'karte', sicher: true };
+    return { zahlung: nummern.includes(ende) ? 'karte' : 'bar', sicher: true };
+  }
+  const k = zahlKlein(t);
+  if (BAR_WOERTER.some((w) => wortIn(k, w))) return { zahlung: 'bar', sicher: true };
+  if (KARTE_WOERTER.some((w) => wortIn(k, w))) return { zahlung: 'karte', sicher: true };
+  return { zahlung: 'karte', sicher: false };
+}
+
+// Beleg aus Text lesen. heute: 'YYYY-MM-DD' (Vorgabe: heutiges Datum); kartenEnde: siehe zahlungLesen
+export function belegLesen(text, { heute = heuteIso(), kartenEnde = '' } = {}) {
   const zeilen = String(text ?? '').split(/\r?\n/);
   const gesamt = zeilen.join('\n');
   const betrag = betragAus(zeilen);
   const waehrung = (betrag && waehrungIn(zeilen[betrag.zeile])) || waehrungIn(gesamt) || 'EUR';
+  const zahlung = zahlungLesen(gesamt, { kartenEnde });
   return {
     datum: datumAus(zeilen, heute),
     betrag: betrag ? betrag.wert : null,
     waehrung,
     haendler: haendlerAus(zeilen),
     kategorie: kategorieAus(gesamt),
+    zahlung: zahlung.zahlung,
+    zahlungSicher: zahlung.sicher,
   };
 }
 
@@ -212,6 +243,53 @@ export function nachMonat(belege = []) {
 export function reiseAm(datum, reisen = []) {
   if (!datum) return null;
   return (reisen || []).find((r) => r && !r.geloescht && r.datum === datum) ?? null;
+}
+
+// Spalte im Reisetag für eine Kategorie: 'uebernachtung', 'fahrt' oder 'neben'
+export function spalteFuer(kategorie) {
+  if (kategorie === 'Hotel') return 'uebernachtung';
+  if (['Tanken', 'Parken', 'Bahn/Flug'].includes(kategorie)) return 'fahrt';
+  return 'neben';
+}
+
+// Betrag in Euro: EUR (oder ohne Währung) als betrag, sonst betragEur; null wenn nicht vorhanden
+export function euroBetrag(beleg) {
+  const b = beleg || {};
+  if (typeof b.betrag !== 'number' || !Number.isFinite(b.betrag)) return null;
+  if ((b.waehrung || 'EUR') === 'EUR') return b.betrag;
+  return typeof b.betragEur === 'number' && Number.isFinite(b.betragEur) ? b.betragEur : null;
+}
+
+// Karte oder privat: alles außer bar gilt als Karte
+export function istKarte(beleg) {
+  return (beleg || {}).zahlung !== 'bar';
+}
+
+// Bar bezahlte Belege des Monats (YYYY-MM) den Reisetagen zuordnen: Euro-Betrag in die Spalte des Tages addieren.
+// tage wird nicht verändert, zurück kommen Kopien. Gelöschte und nicht-bare Belege werden übergangen.
+export function barZuordnen(tage = [], belege = [], monat = '') {
+  const kopien = (tage || []).map((t) => ({ ...t }));
+  const eingetragen = [];
+  const ohneReisetag = [];
+  const ohneEuro = [];
+  const bar = (belege || []).filter((b) => b && !b.geloescht && b.zahlung === 'bar'
+    && String(b.datum ?? '').startsWith(String(monat ?? '')));
+  for (const beleg of bar) {
+    const betrag = euroBetrag(beleg);
+    if (betrag === null) {
+      ohneEuro.push(beleg);
+      continue;
+    }
+    const tag = kopien.find((t) => t.datum === beleg.datum);
+    if (!tag) {
+      ohneReisetag.push(beleg);
+      continue;
+    }
+    const feld = spalteFuer(beleg.kategorie);
+    tag[feld] = Math.round(((Number(tag[feld]) || 0) + betrag) * 100) / 100;
+    eingetragen.push(beleg);
+  }
+  return { tage: kopien, eingetragen, ohneReisetag, ohneEuro };
 }
 
 // Dateiname für einen Beleg, z. B. '2026-10-14 Tanken 76,12 EUR.pdf'

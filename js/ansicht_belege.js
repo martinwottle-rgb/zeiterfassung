@@ -3,7 +3,7 @@
 // Auswahlmodus: Häkchen an den Belegen, darunter PDF und „Als abgegeben markieren“. Nach einer Ausgabe fragt ein
 // Banner, ob die Belege als abgegeben markiert werden sollen. Miniaturen werden nach dem Zeichnen nachgeladen.
 import { alle, bildLaden, speichern } from './speicher.js';
-import { belegDateiname, betragText, nachMonat, reiseAm } from './belege.js';
+import { belegDateiname, betragText, euroBetrag, istKarte, nachMonat, reiseAm } from './belege.js';
 import { belegBearbeiten, belegErfassen } from './beleg_sheet.js';
 import { belegePdf, pdfErsteSeite } from './beleg_pdf.js';
 import { bildHolen, einrichtungLaden } from './abgleich.js';
@@ -20,6 +20,11 @@ const LEER_TEXT = {
   abgegeben: 'Keine abgegebenen Belege.',
 };
 const PLATZHALTER = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg>';
+// Zahlungsart vor dem Betrag: Karte (Rechteck mit Streifen) und Geldschein; Farbe über currentColor
+const SYMBOL_KARTE = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="5.5" width="19" height="13" rx="2"/><path d="M2.5 9.5h19M6 15h4"/></svg>';
+const SYMBOL_BAR = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="7" width="19" height="10" rx="1.5"/><circle cx="12" cy="12" r="2.2"/><path d="M6 10v4M18 10v4"/></svg>';
+// Nur für Bildschirmleser sichtbar (eine Klasse dafür gibt es nicht)
+const SR_NUR = 'position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;';
 
 // Zähler für eindeutige Ids der Überschriften
 let folge = 0;
@@ -64,6 +69,29 @@ function anzahlText(n) {
 function datumAnzeige(datum) {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(txt(datum));
   return m ? `${m[3]}.${m[2]}.${m[1]}` : '';
+}
+
+// Summe der Beträge je Währung, z. B. { EUR: 120.5 }
+function summeJeWaehrung(belege) {
+  const summen = {};
+  for (const b of belege) {
+    if (!Number.isFinite(b.betrag)) continue;
+    const w = b.waehrung || 'EUR';
+    summen[w] = (summen[w] || 0) + b.betrag;
+  }
+  return summen;
+}
+
+// Bar-Belege: Summe der Euro-Beträge und Zahl der Belege ohne Euro-Betrag
+function barEuroSumme(belege) {
+  let summe = 0;
+  let ohne = 0;
+  for (const b of belege) {
+    const eur = euroBetrag(b);
+    if (Number.isFinite(eur)) summe += eur;
+    else ohne += 1;
+  }
+  return { summe, ohne };
 }
 
 // Ist der Blob ein PDF (am Typ oder an der Kennung %PDF- am Anfang)?
@@ -122,8 +150,21 @@ function zeileBauen(ctx, b, paare) {
   if (unter) textBlock.append(el('span', 'liste-unter', unter));
 
   const rechts = el('span', 'belege-rechts');
-  if (Number.isFinite(b.betrag)) rechts.append(el('span', 'zahl', betragText(b.betrag, b.waehrung)));
-  else rechts.append(el('span', 'belege-fehlt', 'Betrag fehlt'));
+  const karte = istKarte(b);
+  const betragZeile = el('span');
+  betragZeile.style.cssText = 'display:inline-flex;align-items:center;gap:6px';
+  const symbol = el('span');
+  symbol.innerHTML = karte ? SYMBOL_KARTE : SYMBOL_BAR;
+  const sr = el('span', null, karte ? 'Firmenkarte' : 'Bar oder privat');
+  sr.style.cssText = SR_NUR;
+  betragZeile.append(symbol, sr);
+  if (Number.isFinite(b.betrag)) betragZeile.append(el('span', 'zahl', betragText(b.betrag, b.waehrung)));
+  else betragZeile.append(el('span', 'belege-fehlt', 'Betrag fehlt'));
+  rechts.append(betragZeile);
+  if (!karte && b.waehrung && b.waehrung !== 'EUR') {
+    const eur = euroBetrag(b);
+    if (Number.isFinite(eur)) rechts.append(el('span', 'notiz zahl', `≈ ${betragText(eur, 'EUR')}`));
+  }
   if (b.status === 'abgegeben') rechts.append(el('span', 'belege-abgegeben', 'abgegeben'));
 
   if (ctx.auswahlModus) {
@@ -359,9 +400,11 @@ export async function zeigen(ziel, kontext) {
     render();
   }
 
+  // PDF nur mit den Kartenbelegen des Monats
   function gruppePdf(g, knopf) {
-    const name = g.monat ? `Belege ${g.titel}.pdf` : 'Belege ohne Datum.pdf';
-    return ausgabeAbschliessen(g.belege, name, knopf);
+    const karten = g.belege.filter((b) => istKarte(b));
+    const name = g.monat ? `Belege Kreditkarte ${g.titel}.pdf` : 'Belege Kreditkarte ohne Datum.pdf';
+    return ausgabeAbschliessen(karten, name, knopf);
   }
 
   // Monatsabschnitt: klebende Überschrift mit Titel, Summen und PDF-Knopf, darunter die Zeilen
@@ -375,11 +418,18 @@ export async function zeigen(ziel, kontext) {
     const titel = el('h2', 'belege-gruppe-titel', g.titel);
     titel.id = id;
     const rechts = el('div', 'belege-gruppe-rechts');
-    const summe = Object.entries(g.summen).map(([w, b]) => betragText(b, w)).filter(Boolean).join(' · ');
+    const karten = g.belege.filter((b) => istKarte(b));
+    const bar = g.belege.filter((b) => !istKarte(b));
+    const summe = Object.entries(summeJeWaehrung(karten)).map(([w, b]) => betragText(b, w)).filter(Boolean).join(' · ');
     if (summe) rechts.append(el('span', 'belege-gruppe-summe zahl', summe));
-    const pdf = el('button', 'belege-pdf', 'PDF');
+    if (bar.length) {
+      const { summe: barEur, ohne } = barEuroSumme(bar);
+      rechts.append(el('span', 'notiz zahl', `Bar / privat: ${betragText(barEur, 'EUR')}${ohne ? ` + ${ohne} ohne Euro` : ''}`));
+    }
+    const pdf = el('button', 'belege-pdf', 'PDF Karte');
     pdf.type = 'button';
-    pdf.setAttribute('aria-label', `PDF für ${g.monat ? g.titel : 'Belege ohne Datum'}`);
+    pdf.disabled = karten.length === 0;
+    pdf.setAttribute('aria-label', `PDF Kreditkarte für ${g.monat ? g.titel : 'Belege ohne Datum'}`);
     pdf.addEventListener('click', () => gruppePdf(g, pdf));
     rechts.append(pdf);
     kopf.append(titel, rechts);

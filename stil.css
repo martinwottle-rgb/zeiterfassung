@@ -1260,3 +1260,16 @@ label.belege-zeile { cursor: pointer; }
 .lead-liste-prio-a { background: var(--akzent); color: var(--akzent-text); }
 .lead-liste-prio-b { background: var(--warnung); color: var(--karte); }
 .lead-liste-prio-c { background: var(--segment); color: var(--text); }
+
+/* Beleg: Bezahlt mit (Segment, Trefferfläche 44 px), Euro-Betrag und Kurshinweis */
+.beleg-zahlung { display: flex; width: 100%; }
+.beleg-zahlung .segment-teil { flex: 1 1 0; min-width: 0; }
+.beleg-zahlung .segment-teil span {
+  display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 12px;
+  white-space: normal; text-align: center; line-height: 1.2;
+}
+.beleg-unsicher .beleg-zahlung { outline: 2px solid var(--warnung); outline-offset: 2px; }
+.beleg-zahlung-feld[hidden] { display: none; }
+.beleg-eur { display: flex; flex-direction: column; gap: 6px; }
+.beleg-eur[hidden] { display: none; }
+.beleg-kurs { margin: -2px 0 0; font-size: .8125rem; }

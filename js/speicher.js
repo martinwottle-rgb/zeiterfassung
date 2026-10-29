@@ -93,6 +93,7 @@ function vorgaben() {
     pauseAuto: false,
     erinnerung: false,
     arbeitsort: '',
+    kartenEnde: '', // Endziffern der Firmenkreditkarte (Belege: Karte oder privat)
   };
 }
 
