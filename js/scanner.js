@@ -276,7 +276,8 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
       }
       let text;
       if (modus === 'start') text = 'Kamera wird eingeschaltet …';
-      else if (modus === 'datei') text = `Ein Foto ${wort === 'Karte' ? 'der Karte' : 'des Belegs'} wählen.`;
+      else if (modus === 'datei') text = `Ein Foto ${ohneRahmen() ? 'der Notiz' : wort === 'Karte' ? 'der Karte' : 'des Belegs'} wählen.`;
+      else if (ohneRahmen()) text = 'Notiz ins Bild halten. Zum Aufnehmen auf den Knopf tippen, das ganze Bild wird übernommen.';
       else if (kanteFehlt) text = `${wort} ins Bild halten. Zum Aufnehmen auf den Knopf tippen.`;
       else if (video.readyState < 2) text = 'Kamera wird eingeschaltet …';
       else if (!bereit) text = 'Erkennung wird geladen …';
@@ -287,7 +288,15 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
       hinweisSetzen(text);
     }
 
+    // Notizen sind Zettel beliebiger Form: keine Kartensuche, das ganze Bild wird übernommen
+    function ohneRahmen() { return rolle === 'Notiz'; }
+
     function rollenZeichnen() {
+      if (ohneRahmen() && letzteEcken) {
+        letzteEcken = null;
+        ruheEcken = null;
+        rahmenZeichnen();
+      }
       rollenKnoepfe.forEach((knopf, i) => knopf.setAttribute('aria-pressed', String(rollen[i] === rolle)));
       ausloeser.setAttribute('aria-label', modus === 'datei' ? `Foto als ${rolle} wählen` : `Foto als ${rolle} aufnehmen`);
     }
@@ -428,7 +437,7 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
         detKtx.drawImage(video, 0, 0, w, h);
         const ecken = await kartenEcken(det, seitenVerhaeltnis);
         bereit = istBereit(modulKante);
-        if (!beendet) aktualisieren(ecken);
+        if (!beendet && !ohneRahmen()) aktualisieren(ecken);
       } finally {
         erkennungLaeuft = false;
       }
@@ -446,7 +455,7 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
       try {
         const kx = video.videoWidth / det.width;
         const ky = video.videoHeight / det.height;
-        const ecken = letzteEcken ? letzteEcken.map((p) => ({ x: p.x * kx, y: p.y * ky })) : null;
+        const ecken = letzteEcken && !ohneRahmen() ? letzteEcken.map((p) => ({ x: p.x * kx, y: p.y * ky })) : null;
         const blob = await jpeg(bildAusVideo(), ecken);
         ablegen(r, blob);
         rolle = naechsteRolle();
@@ -470,7 +479,7 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
       melden('Das Foto wird erkannt …');
       try {
         const leinwand = await leinwandAusDatei(datei);
-        const blob = await jpeg(leinwand, await kartenEcken(leinwand, seitenVerhaeltnis));
+        const blob = await jpeg(leinwand, ohneRahmen() ? null : await kartenEcken(leinwand, seitenVerhaeltnis));
         ablegen(r, blob);
         rolle = naechsteRolle();
         rollenZeichnen();
@@ -552,7 +561,7 @@ export function scannen(kontext, { seiten = ROLLEN, seitenVerhaeltnis = null, wo
       while (!beendet) {
         const start = performance.now();
         hinweisAktualisieren();
-        if (modus === 'kamera' && !ausgeblendet && !kanteFehlt && video.readyState >= 2) await erkennen();
+        if (modus === 'kamera' && !ausgeblendet && !kanteFehlt && !ohneRahmen() && video.readyState >= 2) await erkennen();
         await pause(Math.max(0, TAKT_MS - (performance.now() - start)));
       }
     }
