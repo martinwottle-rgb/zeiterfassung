@@ -1,6 +1,6 @@
 // Auswertungen: ohne Parameter die Liste der Läufe (Messe-Pakete), mit Lauf-Id die Prioritätenliste eines Laufs.
 // Antippen eines Kontakts öffnet ein Sheet mit Recherche, Maschinen, nächstem Schritt, Plan und Mailentwurf.
-import { alle, bildLaden, einstellungenLaden } from './speicher.js';
+import { alle, bildLaden, einstellungenLaden, speichern } from './speicher.js';
 import { kontaktName } from './kontakte.js';
 import { auswertungStarten, ergebnisEinlesen, paketErneutKopieren, textKopieren } from './auswertung_sheet.js';
 // Namensraum statt benannter Importe: fehlt eine Funktion, bricht so nicht das ganze Modul
@@ -57,6 +57,70 @@ function mailVon(k) {
     console.warn('Mail nicht gebildet', e?.message);
     return null;
   }
+}
+
+// Maschinen als Text, egal ob Liste oder Text
+function maschinenText(a) {
+  return Array.isArray(a?.maschinen) ? a.maschinen.map(text).filter(Boolean).join(', ') : text(a?.maschinen);
+}
+
+// Zeitpunkt als 'TT.MM. um HH:MM'
+function zeitpunktText(ms) {
+  const d = new Date(ms);
+  const z = (n) => String(n).padStart(2, '0');
+  return `${z(d.getDate())}.${z(d.getMonth() + 1)}. um ${z(d.getHours())}:${z(d.getMinutes())}`;
+}
+
+// Am Laptop: Knopf „Als Entwurf in Outlook“ mit Meldung und Stand des letzten Entwurfs
+function outlookBlock(k, mail) {
+  const block = el('div', 'auswertung-outlook');
+  const status = el('p', 'notiz auswertung-entwurf-status');
+  const meldung = el('p', 'auswertung-meldung');
+  meldung.setAttribute('role', 'status');
+  const knopf = el('button', 'knopf', 'Als Entwurf in Outlook');
+  knopf.type = 'button';
+
+  const stand = (ms) => {
+    if (ms) {
+      status.textContent = `Entwurf angelegt am ${zeitpunktText(ms)}`;
+      knopf.textContent = 'Erneut als Entwurf anlegen';
+    } else {
+      status.textContent = '';
+      knopf.textContent = 'Als Entwurf in Outlook';
+    }
+  };
+  stand(k.auswertung?.entwurf);
+
+  knopf.addEventListener('click', async () => {
+    knopf.disabled = true;
+    knopf.textContent = 'Wird angelegt …';
+    meldung.textContent = '';
+    try {
+      const antwort = await fetch('/api/outlook-entwurf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ an: k.email || '', betreff: mail.betreff, text: mail.text }),
+      });
+      const daten = await antwort.json();
+      meldung.textContent = daten?.meldung || (daten?.ok ? 'Entwurf angelegt.' : 'Entwurf konnte nicht angelegt werden.');
+      if (daten?.ok) {
+        // Frischen Stand holen, damit keine Änderungen verloren gehen
+        const frisch = (await alle('kontakte')).find((x) => String(x.id) === String(k.id)) ?? k;
+        const jetzt = Date.now();
+        await speichern('kontakte', { ...frisch, auswertung: { ...frisch.auswertung, entwurf: jetzt } });
+        k.auswertung = { ...(k.auswertung ?? {}), entwurf: jetzt };
+      }
+    } catch (e) {
+      console.warn('Outlook-Entwurf nicht angelegt', e?.message);
+      meldung.textContent = 'Entwurf konnte nicht angelegt werden.';
+    } finally {
+      knopf.disabled = false;
+      stand(k.auswertung?.entwurf);
+    }
+  });
+
+  block.append(knopf, status, meldung);
+  return block;
 }
 
 // Listenzeile eines Laufs als Link auf #auswertung/<id>
@@ -132,6 +196,7 @@ async function detailOeffnen(k, kontext) {
       aktionen.append(mailLink);
     }
     huelle.append(aktionen);
+    if (kontext?.laptop === true) huelle.append(outlookBlock(k, mail));
   }
 
   kontext.sheet.oeffnen(name, huelle, { ohneRueckfrage: true });
@@ -164,12 +229,13 @@ function kontaktZeile(k, kontext) {
 
   const block = el('span', 'liste-text');
   const p = prioritaetVon(k);
+  const kopf = el('span', 'auswertung-zeile-kopf');
   if (p) {
-    const kopf = el('span', 'auswertung-zeile-kopf');
     kopf.append(el('span', `lead-prio lead-prio-${p.wert.toLowerCase()}`, `${p.wert} ${p.text}`));
     if (!text(k.lead?.prioritaet) && text(a?.prioritaet)) kopf.append(el('span', 'auswertung-vorschlag', 'Vorschlag'));
-    block.append(kopf);
   }
+  if (a?.entwurf) kopf.append(el('span', 'auswertung-entwurf', 'Entwurf'));
+  if (p || a?.entwurf) block.append(kopf);
   block.append(el('span', 'liste-titel', text(k.firma) || kontaktName(k)));
   const unter = [];
   if (text(k.firma)) unter.push(kontaktName(k));
@@ -240,6 +306,77 @@ async function listeZeigen(ziel, kontext, auswertungen) {
   ziel.append(liste);
 }
 
+// Excel aus den Kontakten mit Ergebnis erstellen; danach Meldung mit Knopf „Ordner öffnen“
+async function excelErstellen(lauf, kontakte, knopf, meldung) {
+  const eintraege = kontakte.filter((k) => k.auswertung).map((k, i) => {
+    const a = k.auswertung;
+    const m = mailVon(k);
+    return {
+      rang: i + 1,
+      prioritaet: text(k.lead?.prioritaet) || text(a.prioritaet),
+      prioQuelle: text(k.lead?.prioritaet) ? 'Martin' : 'Claude',
+      firma: text(k.firma),
+      name: kontaktName(k),
+      position: text(k.position),
+      ort: text(k.ort),
+      land: text(k.land),
+      telefon: text(k.telefon),
+      mobil: text(k.mobil),
+      email: text(k.email),
+      web: text(k.web),
+      passung: text(a.passung),
+      punktzahl: punkte(k) ?? '',
+      schritt: text(a.schritt),
+      schrittText: text(a.schrittText),
+      recherche: text(a.recherche),
+      maschinen: maschinenText(a),
+      plan: text(a.plan),
+      betreff: text(m?.betreff),
+      mail: text(m?.text),
+      notiz: text(k.notiz),
+      lead: lead.leadText(k.lead) || '',
+    };
+  });
+
+  const alt = knopf.textContent;
+  knopf.disabled = true;
+  knopf.textContent = 'Wird erstellt …';
+  meldung.replaceChildren();
+  let daten = null;
+  try {
+    const antwort = await fetch('/api/auswertung-excel', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ anlass: text(lauf.anlass), von: text(lauf.von), bis: text(lauf.bis), eintraege }),
+    });
+    daten = await antwort.json();
+  } catch (e) {
+    console.warn('Excel nicht erstellt', e?.message);
+  }
+  knopf.disabled = false;
+  knopf.textContent = alt;
+
+  if (daten?.ok) {
+    const ordner = daten.ordner;
+    const ordnerKnopf = el('button', 'knopf knopf-klein', 'Ordner öffnen');
+    ordnerKnopf.type = 'button';
+    ordnerKnopf.addEventListener('click', async () => {
+      try {
+        await fetch('/api/ordner-oeffnen', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pfad: ordner }),
+        });
+      } catch (e) {
+        console.warn('Ordner nicht geöffnet', e?.message);
+      }
+    });
+    meldung.append(el('span', null, `Gespeichert: ${text(daten.datei)}`), ' ', ordnerKnopf);
+  } else {
+    meldung.textContent = text(daten?.fehler) || 'Excel konnte nicht erstellt werden.';
+  }
+}
+
 // Prioritätenliste eines Laufs
 async function laufZeigen(ziel, kontext, lauf) {
   const alleKontakte = (await alle('kontakte')).filter((k) => !k.geloescht);
@@ -267,14 +404,25 @@ async function laufZeigen(ziel, kontext, lauf) {
   einlesenKnopf.type = 'button';
   einlesenKnopf.addEventListener('click', () => ergebnisEinlesen(lauf, kontext));
 
+  // Am Laptop, nur wenn mindestens ein Kontakt ein Ergebnis hat
+  const knoepfe = [paketKnopf, einlesenKnopf];
+  const meldung = el('p', 'auswertung-meldung');
+  meldung.setAttribute('role', 'status');
+  if (kontext?.laptop === true && kontakte.some((k) => k.auswertung)) {
+    const excelKnopf = el('button', 'knopf', 'Excel erstellen');
+    excelKnopf.type = 'button';
+    excelKnopf.addEventListener('click', () => excelErstellen(lauf, kontakte, excelKnopf, meldung));
+    knoepfe.push(excelKnopf);
+  }
+
   const zeitraum = zeitraumText(lauf);
   const { linkZeile, kopf } = kopfBauen(
     { text: '‹ Auswertungen', href: '#auswertung' },
     text(lauf.anlass) || 'Auswertung',
     [zeitraum, anzahlText(kontakte.length)].filter(Boolean).join(' · '),
-    [paketKnopf, einlesenKnopf],
+    knoepfe,
   );
-  ziel.replaceChildren(linkZeile, kopf);
+  ziel.replaceChildren(linkZeile, kopf, meldung);
 
   if (!lauf.eingelesen) {
     ziel.append(el('p', 'notiz auswertung-hinweis',
