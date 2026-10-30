@@ -55,6 +55,9 @@ function prioritaetVon(k) {
   return (lead.LEAD_PRIORITAET ?? []).find((p) => p.wert === wert) ?? null;
 }
 
+// Reiner Text ohne Markdown-Sterne (Kopieren, Mail-App, Anzeige, Excel). Outlook bekommt die Sterne, der Server macht daraus HTML.
+const ohneSterne = (t) => String(t ?? '').replace(/\*\*/g, '');
+
 // Mailtext aus dem Ergebnis, sonst null
 function mailVon(k) {
   if (!k.auswertung) return null;
@@ -187,19 +190,19 @@ async function detailOeffnen(k, kontext) {
   if (mail && (text(mail.betreff) || text(mail.text))) {
     huelle.append(el('h3', 'auswertung-abschnitt', 'Mail'));
     if (text(mail.betreff)) huelle.append(el('p', 'auswertung-betreff', text(mail.betreff)));
-    huelle.append(el('pre', 'auswertung-text auswertung-mail', mail.text ?? ''));
+    huelle.append(el('pre', 'auswertung-text auswertung-mail', ohneSterne(mail.text)));
 
     const aktionen = el('div', 'auswertung-fuss');
     const kopierKnopf = el('button', 'knopf', 'Mail kopieren');
     kopierKnopf.type = 'button';
     kopierKnopf.addEventListener('click', async () => {
-      const ok = await textKopieren([mail.betreff, '', mail.text].join('\n'));
+      const ok = await textKopieren([mail.betreff, '', ohneSterne(mail.text)].join('\n'));
       kopierKnopf.textContent = ok ? 'Kopiert' : 'Kopieren hat nicht geklappt';
     });
     aktionen.append(kopierKnopf);
     if (text(k.email)) {
       const mailLink = el('a', 'knopf', 'In Mail öffnen');
-      mailLink.href = `mailto:${k.email}?subject=${encodeURIComponent(mail.betreff ?? '')}&body=${encodeURIComponent(mail.text ?? '')}`;
+      mailLink.href = `mailto:${k.email}?subject=${encodeURIComponent(mail.betreff ?? '')}&body=${encodeURIComponent(ohneSterne(mail.text))}`;
       aktionen.append(mailLink);
     }
     huelle.append(aktionen);
@@ -339,7 +342,7 @@ async function excelErstellen(lauf, kontakte, knopf, meldung) {
       maschinen: maschinenText(a),
       plan: text(a.plan),
       betreff: text(m?.betreff),
-      mail: text(m?.text),
+      mail: ohneSterne(text(m?.text)),
       notiz: text(k.notiz),
       lead: lead.leadText(k.lead) || '',
     };
