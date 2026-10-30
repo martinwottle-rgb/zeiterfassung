@@ -2,6 +2,7 @@
 // zusammenstellen, die Antwort einlesen und am Kontakt speichern. Jeder Lauf wird in den Einstellungen festgehalten.
 import { alle, einstellungenLaden, einstellungenSpeichern, speichern } from './speicher.js';
 import { reisenGruppieren } from './reisen.js';
+import { kontaktName } from './kontakte.js';
 import { addTage, datumText } from './zeit.js';
 // Namensraum statt benannter Importe: fehlt eine Funktion, bricht so nicht das ganze Modul
 import * as lead from './lead.js';
@@ -79,6 +80,27 @@ function imZeitraum(kontakte, von, bis, nurLead) {
   });
 }
 
+// Kontakt steht in der Liste, wenn er auswertbar ist oder bewusst ausgeschlossen wurde (Lieferant, damit er wieder angehakt werden kann).
+// Die eigene Firma steht nicht in der Liste.
+function listeSichtbar(k) {
+  return k.auswertungAus === true || Boolean(lead.auswertbar(k));
+}
+
+// Bezeichnung in der Liste: „Firma · Name“, ohne Firma nur der Name
+function bezeichnung(k) {
+  return [String(k.firma ?? '').trim(), kontaktName(k)].filter(Boolean).join(' · ');
+}
+
+// Anzahl eindeutiger Firmen; Kontakte ohne Firma zählen je einzeln
+function firmenZahl(liste) {
+  const namen = new Set();
+  for (const k of liste) {
+    const firma = String(k.firma ?? '').trim().toLowerCase();
+    namen.add(firma || `#${k.id}`);
+  }
+  return namen.size;
+}
+
 // Text in die Zwischenablage. true, wenn es geklappt hat.
 export async function textKopieren(text) {
   try {
@@ -130,6 +152,9 @@ export async function auswertungStarten(kontext) {
     return;
   }
 
+  // Häkchen je Kontakt (Schlüssel: Id). Anfangszustand: auswertbar
+  const haken = new Map(kontakte.map((k) => [String(k.id), Boolean(lead.auswertbar(k))]));
+
   let modus = gruppen.length ? 'reise' : 'zeitraum';
   let beschaeftigt = false;
   const form = el('form', 'auswertung-form');
@@ -142,7 +167,7 @@ export async function auswertungStarten(kontext) {
     () => {
       modus = modusWahl.wert();
       panelAktualisieren();
-      aktualisieren();
+      zeitraumGeaendert();
     },
   );
 
@@ -188,6 +213,11 @@ export async function auswertungStarten(kontext) {
 
   const zaehler = el('p', 'notiz zahl auswertung-zaehler');
   zaehler.setAttribute('role', 'status');
+  // Liste der Kontakte mit Häkchen unter dem Zähler
+  const listeBox = el('div', 'auswertung-haken-liste');
+  listeBox.setAttribute('role', 'group');
+  listeBox.setAttribute('aria-label', 'Kontakte für das Paket');
+
   const zeitHinweis = el('p', 'notiz fehler', 'Das Datum Bis liegt vor dem Datum Von.');
   zeitHinweis.hidden = true;
   const vorlagenHinweis = el('p', 'notiz auswertung-hinweis', VORLAGEN_FEHLEN);
@@ -210,11 +240,67 @@ export async function auswertungStarten(kontext) {
     return { von: vonEingabe.value, bis: bisEingabe.value };
   }
 
-  // Kontakte im Zeitraum; bei ungültigem Zeitraum keine
-  function treffer() {
+  // Kontakte der Liste: im Zeitraum (mit Schalter), ohne die eigene Firma; bei ungültigem Zeitraum keine
+  function anzeige() {
     const z = zeitraum();
     if (!z || !z.von || !z.bis || z.von > z.bis) return [];
-    return imZeitraum(kontakte, z.von, z.bis, nurLead.checked);
+    return imZeitraum(kontakte, z.von, z.bis, nurLead.checked).filter(listeSichtbar);
+  }
+
+  // Angehakte Kontakte der Liste: kommen ins Paket
+  function treffer() {
+    return anzeige().filter((k) => haken.get(String(k.id)) === true);
+  }
+
+  // Eine Zeile mit Häkchen und „Firma · Name“
+  function hakenZeile(k) {
+    const id = String(k.id);
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.name = 'kontakt';
+    box.value = id;
+    box.checked = haken.get(id) === true;
+    box.addEventListener('change', () => hakenAendern(k, box));
+    const label = el('label', 'auswertung-haken');
+    label.append(box, el('span', null, bezeichnung(k)));
+    return label;
+  }
+
+  // Liste neu aufbauen, wenn sich Zeitraum oder Schalter ändern
+  function listeNeuZeichnen() {
+    const liste = [...anzeige()].sort((a, b) => bezeichnung(a).localeCompare(bezeichnung(b), 'de'));
+    if (liste.length === 0) {
+      listeBox.replaceChildren(el('p', 'notiz', 'Keine Kontakte in diesem Zeitraum.'));
+      return;
+    }
+    listeBox.replaceChildren(...liste.map(hakenZeile));
+  }
+
+  // Ein Häkchen geändert: am Kontakt merken, damit Lieferanten künftig draußen bleiben
+  async function hakenAendern(k, box) {
+    const id = String(k.id);
+    const neu = box.checked;
+    haken.set(id, neu);
+    aktualisieren();
+    try {
+      // Frisch laden, damit Änderungen seit dem Öffnen nicht überschrieben werden
+      const frisch = (await alle('kontakte')).find((x) => String(x.id) === id) ?? k;
+      await speichern('kontakte', { ...frisch, auswertungAus: !neu });
+      k.auswertungAus = !neu;
+    } catch (e) {
+      console.error(e);
+      box.checked = !neu;
+      haken.set(id, !neu);
+      aktualisieren();
+      fehlerText.textContent = SPEICHERN_FEHLER;
+      fehlerText.hidden = false;
+    }
+  }
+
+  // Zeitraum oder Schalter haben sich geändert: Liste neu und Zähler aktualisieren
+  function zeitraumGeaendert() {
+    listeNeuZeichnen();
+    aktualisieren();
   }
 
   // Zähler, Hinweis zum Zeitraum und Freigabe des Pakets
@@ -222,8 +308,10 @@ export async function auswertungStarten(kontext) {
     const z = zeitraum();
     const falsch = Boolean(z && z.von && z.bis && z.von > z.bis);
     zeitHinweis.hidden = !falsch;
-    const n = treffer().length;
-    zaehler.textContent = `${n} ${n === 1 ? 'Kontakt' : 'Kontakte'} im Zeitraum`;
+    const liste = treffer();
+    const n = liste.length;
+    const firmen = firmenZahl(liste);
+    zaehler.textContent = `${n} ${n === 1 ? 'Kontakt' : 'Kontakte'}, ${firmen} ${firmen === 1 ? 'Firma' : 'Firmen'} im Paket`;
     paketKnopf.disabled = n === 0 || !vorlagenDa || beschaeftigt;
   }
 
@@ -235,13 +323,13 @@ export async function auswertungStarten(kontext) {
   reiseSelect.addEventListener('change', () => {
     const g = gruppen[Number(reiseSelect.value)];
     anlassEingabe.value = g?.anlass || '';
-    aktualisieren();
+    zeitraumGeaendert();
   });
   for (const e of [vonEingabe, bisEingabe]) {
-    e.addEventListener('input', aktualisieren);
-    e.addEventListener('change', aktualisieren);
+    e.addEventListener('input', zeitraumGeaendert);
+    e.addEventListener('change', zeitraumGeaendert);
   }
-  nurLead.addEventListener('change', aktualisieren);
+  nurLead.addEventListener('change', zeitraumGeaendert);
 
   // Paket bauen, als Lauf speichern und im selben Sheet anzeigen
   async function paketErstellen() {
@@ -259,7 +347,7 @@ export async function auswertungStarten(kontext) {
         return;
       }
       const anlass = anlassEingabe.value.trim();
-      const { text, nummern } = lead.paketBauen({ anlass, kontakte: liste, vorlagen: einst.claudeVorlagen });
+      const { text, nummern, gruppen: paketGruppen } = lead.paketBauen({ anlass, kontakte: liste, vorlagen: einst.claudeVorlagen });
       const lauf = {
         id: crypto.randomUUID(),
         anlass,
@@ -267,6 +355,7 @@ export async function auswertungStarten(kontext) {
         bis: z.bis,
         erstellt: Date.now(),
         nummern,
+        gruppen: paketGruppen,
         text,
         eingelesen: null,
       };
@@ -291,6 +380,7 @@ export async function auswertungStarten(kontext) {
     feld('Anlass', anlassEingabe),
     schalter,
     zaehler,
+    listeBox,
     zeitHinweis,
     vorlagenHinweis,
     fehlerText,
@@ -298,6 +388,7 @@ export async function auswertungStarten(kontext) {
   );
 
   panelAktualisieren();
+  listeNeuZeichnen();
   aktualisieren();
   kontext.sheet.oeffnen('Messe auswerten', form, { ohneRueckfrage: true });
 }
@@ -343,7 +434,7 @@ export function ergebnisEinlesen(lauf, kontext) {
     einlesenKnopf.disabled = true;
     weiterKnopf.hidden = true;
     try {
-      const ergebnis = lead.ergebnisLesen(antwort.value, lauf.nummern);
+      const ergebnis = lead.ergebnisLesen(antwort.value, lauf.nummern, lauf.gruppen);
       const eintraege = ergebnis?.eintraege ?? [];
       const fehler = [...(ergebnis?.fehler ?? [])];
       if (eintraege.length === 0) {
@@ -351,21 +442,27 @@ export function ergebnisEinlesen(lauf, kontext) {
         return;
       }
 
-      // Frisch laden, damit Änderungen seit dem Öffnen nicht überschrieben werden
-      const kontakte = await alle('kontakte');
       let gespeichert = 0;
       for (const eintrag of eintraege) {
-        const { kontaktId, ...rest } = eintrag;
-        const k = kontakte.find((x) => String(x.id) === String(kontaktId));
-        if (!k || k.geloescht) {
-          fehler.push(`Kontakt zu ${eintrag.nr} nicht gefunden.`);
-          continue;
+        const { kontaktId, kontaktIds, ...rest } = eintrag;
+        // Ein Eintrag gilt für alle Kontakte seiner Firma; ohne Liste nur für kontaktId
+        const ids = Array.isArray(kontaktIds) && kontaktIds.length ? kontaktIds : [kontaktId];
+        let ok = 0;
+        for (const id of ids) {
+          // Je Kontakt frisch laden, damit Änderungen seit dem Öffnen nicht überschrieben werden
+          const kontakte = await alle('kontakte');
+          const k = kontakte.find((x) => String(x.id) === String(id));
+          if (!k || k.geloescht) {
+            fehler.push(`Kontakt zu ${eintrag.nr} nicht gefunden.`);
+            continue;
+          }
+          await speichern('kontakte', {
+            ...k,
+            auswertung: { ...rest, laufId: lauf.id, eingelesen: Date.now() },
+          });
+          ok += 1;
         }
-        await speichern('kontakte', {
-          ...k,
-          auswertung: { ...rest, laufId: lauf.id, eingelesen: Date.now() },
-        });
-        gespeichert += 1;
+        if (ok > 0) gespeichert += 1;
       }
 
       if (gespeichert > 0) {

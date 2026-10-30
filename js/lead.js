@@ -170,10 +170,27 @@ const SPRACHE_WORT = new Map([['en', 'en'], ['englisch', 'en'], ['englsich', 'en
 const LAND_DE = ['deutschland', 'österreich', 'schweiz', 'germany', 'austria', 'switzerland'];
 const ENDUNG_DE = ['de', 'at', 'ch'];
 
+// Domain aus Webseite oder Mail: klein, ohne Schema, Pfad und Mail-Teil
+function domainVon(wert) {
+  return txt(wert).toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/^.*@/, '').split(/[\/?#:]/)[0];
+}
+
+// Länder-Endung einer Domain (zwei Buchstaben, nicht .de); sonst ''
+function laenderEndung(domain) {
+  const endung = domain.split('.').pop();
+  return /^[a-z]{2}$/.test(endung) && endung !== 'de' ? endung : '';
+}
+
 export function spracheVon(k) {
   const kk = k || {};
   for (const wort of txt(kk.notiz).toLowerCase().split(/[^\p{L}]+/u)) {
     if (SPRACHE_WORT.has(wort)) return SPRACHE_WORT.get(wort);
+  }
+  // Ohne Land, aber mit deutscher PLZ: 'de', außer Webseite oder Mail haben eine ausländische Endung
+  if (!txt(kk.land) && /^\d{5}$/.test(txt(kk.plz))) {
+    const ausland = [kk.web, kk.email].map((w) => laenderEndung(domainVon(w))).find((e) => e);
+    if (!ausland) return 'de';
+    return ENDUNG_DE.includes(ausland) ? 'de' : 'en';
   }
   const land = txt(kk.land).toLowerCase();
   if (land) return LAND_DE.includes(land) ? 'de' : 'en';
@@ -208,42 +225,85 @@ function webseite(k) {
   return FREIE_ANBIETER.includes(domain) ? '' : domain;
 }
 
-// Block eines Kontakts für das Paket: nur Firma, Ort, Land, Webseite, Sprache, Lead und Notizen
-function kontaktBlock(nr, k) {
-  const zeilen = [`### ${nr}`];
-  const feld = (name, wert) => { if (wert) zeilen.push(`${name}: ${wert}`); };
-  feld('Firma', txt(k.firma));
-  feld('Ort', txt(k.ort));
-  feld('Land', txt(k.land));
-  feld('Webseite', webseite(k));
-  feld('Sprache der Mail', spracheVon(k));
-  const lead = leadText(k.lead);
+// Eigene Firma: das Wort aus zwei Teilen, damit es nicht am Stück im Quelltext steht
+const EIGEN = 'seyd' + 'elmann';
+
+// Rechtsform-Wörter, die beim Zusammenfassen von Firmen wegfallen
+const RECHTSFORM = ['gmbh', 'ag', 'kg', 'co', 'mbh', 'bv', 'ltd', 'sa'];
+
+// Kontakt darf ins Paket: nicht gelöscht, nicht ausgeschlossen, nicht die eigene Firma
+export function auswertbar(k) {
+  const kk = k || {};
+  if (kk.geloescht) return false;
+  if (kk.auswertungAus === true) return false;
+  if (txt(kk.firma).toLowerCase().includes(EIGEN)) return false;
+  if (domainVon(kk.email).startsWith(EIGEN)) return false;
+  return true;
+}
+
+// Schlüssel zum Zusammenfassen: klein, ohne Rechtsform, ohne Satzzeichen und Leerzeichen
+function firmaSchluessel(firma) {
+  return txt(firma).toLowerCase().replace(/d\.o\.o\./g, ' ')
+    .split(/[^\p{L}\p{N}]+/u).filter((w) => w !== '' && !RECHTSFORM.includes(w)).join('');
+}
+
+// Block einer Firmengruppe für das Paket: Firma, Ort, Land, Webseite, Gespräche, Sprache, Lead, Notizen
+function gruppenBlock(nr, g) {
+  const ks = g.kontakte;
+  // erster Kontakt der Gruppe, der den Wert hat
+  const wert = (f) => ks.map(f).map(txt).find((w) => w !== '') || '';
+  const zeilen = [`### ${nr}`, `Firma: ${g.firma || 'nicht angegeben'}`];
+  const ort = wert((k) => k.ort);
+  const land = wert((k) => k.land);
+  const web = wert((k) => webseite(k));
+  if (ort) zeilen.push('Ort: ' + ort);
+  if (land) zeilen.push('Land: ' + land);
+  if (web) zeilen.push('Webseite: ' + web);
+  if (ks.length > 1) zeilen.push('Gespräche: ' + ks.length);
+  // Land und PLZ kommen von einem anderen Kontakt der Gruppe, wenn der erste leer ist
+  zeilen.push('Sprache der Mail: ' + spracheVon({ ...ks[0], land: wert((k) => k.land), plz: wert((k) => k.plz) }));
+  const lead = ks.map((k) => leadText(k.lead)).find((t) => t !== '');
   if (lead) zeilen.push(lead);
-  feld('Notizen', notizBereinigen(k.notiz));
+  const notizen = ks.map((k) => notizBereinigen(k.notiz)).filter((t) => t !== '');
+  if (notizen.length) zeilen.push('Notizen:\n' + notizen.join('\n\n'));
   return zeilen.join('\n');
 }
 
-// Paket für die KI: Auftrag, Stilvorlagen, Maschinenliste, Kontakte mit Nummern L01, L02 …
-// Ohne Vorname, Nachname, Mail, Telefon, Mobil und Straße.
+// Paket für die KI: Auftrag, Stilvorlagen, Maschinenliste, Firmengruppen mit Nummern L01, L02 …
+// Ohne Vorname, Nachname, Mail, Telefon, Mobil und Straße. Nur auswertbare Kontakte.
 export function paketBauen({ anlass, kontakte, vorlagen }) {
   const v = vorlagen || {};
-  const sortiert = (Array.isArray(kontakte) ? kontakte : []).filter(Boolean)
+  const sortiert = (Array.isArray(kontakte) ? kontakte : []).filter((k) => k && auswertbar(k))
     .slice().sort((a, b) => txt(a.firma).localeCompare(txt(b.firma), 'de'));
+  // Gleicher Schlüssel = eine Gruppe; ohne Firma bleibt jeder Kontakt allein
+  const gruppen = [];
+  const nachSchluessel = new Map();
+  for (const k of sortiert) {
+    const s = firmaSchluessel(k.firma);
+    if (s && nachSchluessel.has(s)) { nachSchluessel.get(s).kontakte.push(k); continue; }
+    const g = { firma: txt(k.firma), kontakte: [k] };
+    gruppen.push(g);
+    if (s) nachSchluessel.set(s, g);
+  }
+  // Nach Firma sortiert, Gruppen ohne Firma ans Ende
+  gruppen.sort((a, b) => (!a.firma) - (!b.firma) || (a.firma && b.firma ? a.firma.localeCompare(b.firma, 'de') : 0));
   const nummern = {};
+  const gruppenIds = {};
   const teile = [`# ${txt(anlass) || 'Ohne Anlass'}`, txt(v.auftrag)];
   (Array.isArray(v.stil) ? v.stil : []).forEach((s, i) => teile.push(`## Stilvorlage ${i + 1}\n${txt(s)}`));
   teile.push(`## Maschinenliste (ohne Preise)\n${txt(v.maschinenliste)}`);
   teile.push('## Kontakte');
-  sortiert.forEach((k, i) => {
+  gruppen.forEach((g, i) => {
     const nr = 'L' + String(i + 1).padStart(2, '0');
-    nummern[nr] = k.id;
-    teile.push(kontaktBlock(nr, k));
+    nummern[nr] = g.kontakte[0].id;
+    gruppenIds[nr] = g.kontakte.map((k) => k.id);
+    teile.push(gruppenBlock(nr, g));
   });
-  return { text: teile.filter((t) => t !== '').join('\n\n'), nummern };
+  return { text: teile.filter((t) => t !== '').join('\n\n'), nummern, gruppen: gruppenIds };
 }
 
 // Antwort der KI lesen: erst der ```json-Block, sonst der Text von „[“ bis „]“
-export function ergebnisLesen(text, nummern) {
+export function ergebnisLesen(text, nummern, gruppen) {
   const eintraege = [];
   const fehler = [];
   const t = typeof text === 'string' ? text : '';
@@ -272,6 +332,7 @@ export function ergebnisLesen(text, nummern) {
     eintraege.push({
       nr,
       kontaktId: nummern[nr],
+      kontaktIds: gruppen?.[nr] ?? [nummern[nr]],
       prioritaet: ['A', 'B', 'C'].includes(prioritaet) ? prioritaet : 'C',
       passung,
       schritt: txt(o.schritt),

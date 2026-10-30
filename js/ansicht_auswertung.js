@@ -26,9 +26,16 @@ function zeitraumText(lauf) {
   return [datumDe(lauf.von), datumDe(lauf.bis)].filter(Boolean).join(' bis ');
 }
 
+// Ids aller Kontakte eines Laufs (eindeutig): aus den Gruppen, sonst aus den Nummern älterer Läufe
+function kontaktIdsVon(lauf) {
+  const ausGruppen = Object.values(lauf.gruppen ?? {}).flat();
+  const quelle = ausGruppen.length ? ausGruppen : Object.values(lauf.nummern ?? {});
+  return [...new Set(quelle.map(String))];
+}
+
 // Anzahl der Kontakte eines Laufs
 function anzahlKontakte(lauf) {
-  return Object.keys(lauf.nummern ?? {}).length;
+  return kontaktIdsVon(lauf).length;
 }
 
 function anzahlText(n) {
@@ -380,7 +387,7 @@ async function excelErstellen(lauf, kontakte, knopf, meldung) {
 // Prioritätenliste eines Laufs
 async function laufZeigen(ziel, kontext, lauf) {
   const alleKontakte = (await alle('kontakte')).filter((k) => !k.geloescht);
-  const ids = new Set(Object.values(lauf.nummern ?? {}).map(String));
+  const ids = new Set(kontaktIdsVon(lauf));
   const kontakte = alleKontakte.filter((k) => ids.has(String(k.id)));
 
   // Mit Punktzahl absteigend, ohne Ergebnis ganz hinten, sonst nach Name
