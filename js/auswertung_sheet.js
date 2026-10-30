@@ -347,7 +347,7 @@ export async function auswertungStarten(kontext) {
         return;
       }
       const anlass = anlassEingabe.value.trim();
-      const { text, nummern, gruppen: paketGruppen } = lead.paketBauen({ anlass, kontakte: liste, vorlagen: einst.claudeVorlagen });
+      const { text, nummern, gruppen: paketGruppen, firmen } = lead.paketBauen({ anlass, kontakte: liste, vorlagen: einst.claudeVorlagen });
       const lauf = {
         id: crypto.randomUUID(),
         anlass,
@@ -356,6 +356,7 @@ export async function auswertungStarten(kontext) {
         erstellt: Date.now(),
         nummern,
         gruppen: paketGruppen,
+        firmen,
         text,
         eingelesen: null,
       };
@@ -434,7 +435,7 @@ export function ergebnisEinlesen(lauf, kontext) {
     einlesenKnopf.disabled = true;
     weiterKnopf.hidden = true;
     try {
-      const ergebnis = lead.ergebnisLesen(antwort.value, lauf.nummern, lauf.gruppen);
+      const ergebnis = lead.ergebnisLesen(antwort.value, lauf.nummern, lauf.gruppen, lauf.firmen);
       const eintraege = ergebnis?.eintraege ?? [];
       const fehler = [...(ergebnis?.fehler ?? [])];
       if (eintraege.length === 0) {

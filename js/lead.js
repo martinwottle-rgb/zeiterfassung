@@ -289,6 +289,7 @@ export function paketBauen({ anlass, kontakte, vorlagen }) {
   gruppen.sort((a, b) => (!a.firma) - (!b.firma) || (a.firma && b.firma ? a.firma.localeCompare(b.firma, 'de') : 0));
   const nummern = {};
   const gruppenIds = {};
+  const firmen = {};
   const teile = [`# ${txt(anlass) || 'Ohne Anlass'}`, txt(v.auftrag)];
   (Array.isArray(v.stil) ? v.stil : []).forEach((s, i) => teile.push(`## Stilvorlage ${i + 1}\n${txt(s)}`));
   teile.push(`## Maschinenliste (ohne Preise)\n${txt(v.maschinenliste)}`);
@@ -297,13 +298,16 @@ export function paketBauen({ anlass, kontakte, vorlagen }) {
     const nr = 'L' + String(i + 1).padStart(2, '0');
     nummern[nr] = g.kontakte[0].id;
     gruppenIds[nr] = g.kontakte.map((k) => k.id);
+    firmen[nr] = g.firma;
     teile.push(gruppenBlock(nr, g));
   });
-  return { text: teile.filter((t) => t !== '').join('\n\n'), nummern, gruppen: gruppenIds };
+  return { text: teile.filter((t) => t !== '').join('\n\n'), nummern, gruppen: gruppenIds, firmen };
 }
 
 // Antwort der KI lesen: erst der ```json-Block, sonst der Text von „[“ bis „]“
-export function ergebnisLesen(text, nummern, gruppen) {
+// firmen (optional, { L01: 'Firma' }): Hat ein Eintrag ein Feld „firma“, gilt die Nummer der gleichnamigen Firma.
+// So passt ein Ergebnis auch zu einem Paket mit anderer Nummerierung.
+export function ergebnisLesen(text, nummern, gruppen, firmen) {
   const eintraege = [];
   const fehler = [];
   const t = typeof text === 'string' ? text : '';
@@ -321,7 +325,16 @@ export function ergebnisLesen(text, nummern, gruppen) {
 
   for (const o of daten) {
     if (!o || typeof o !== 'object') continue;
-    const nr = String(o.nr ?? '').trim();
+    let nr = String(o.nr ?? '').trim();
+    const firmaS = firmaSchluessel(txt(o.firma));
+    if (firmaS && firmen) {
+      const treffer = Object.keys(firmen).find((n) => firmaSchluessel(firmen[n] || 'nicht angegeben') === firmaS);
+      if (treffer) nr = treffer;
+      else {
+        fehler.push(`${txt(o.firma)}: Firma ist nicht in diesem Paket`);
+        continue;
+      }
+    }
     if (!Object.prototype.hasOwnProperty.call(nummern || {}, nr)) {
       fehler.push(`${nr}: Nummer gehört zu keinem Kontakt dieses Pakets`);
       continue;
