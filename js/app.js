@@ -6,7 +6,7 @@ import { mitternachtPruefen } from './stempeln.js';
 import { abgleichen, bildHolen, einrichtungLaden } from './abgleich.js';
 import { abwesenheitAm, sollMinuten, stempelZustand } from './rechnen.js';
 
-const ANSICHTEN = ['heute', 'woche', 'monat', 'abwesenheiten', 'reisen', 'belege', 'kontakte', 'einstellungen'];
+const ANSICHTEN = ['heute', 'woche', 'monat', 'abwesenheiten', 'reisen', 'belege', 'kontakte', 'auswertung', 'einstellungen'];
 const ansicht = document.getElementById('ansicht');
 const rahmen = document.querySelector('.rahmen');
 const hintergrund = document.getElementById('sheet-hintergrund');
@@ -30,7 +30,7 @@ function ausHash() {
 }
 
 // Monat und Abwesenheiten gehören zum Reiter „Zeit“ (woche). Einstellungen hat ein eigenes Zahnrad.
-const REITER_VON = { monat: 'woche', abwesenheiten: 'woche' };
+const REITER_VON = { monat: 'woche', abwesenheiten: 'woche', auswertung: 'kontakte' };
 
 function navAktualisieren(name) {
   const reiter = REITER_VON[name] ?? name;
@@ -501,6 +501,22 @@ async function swRegistrieren() {
   }
 }
 
+// Vorlagen für das „Paket für Claude“ (Auftrag, Maschinenliste, Stilvorlagen) liegen im Second Brain auf dem Laptop.
+// Neuere Fassung in die Einstellungen übernehmen; der verschlüsselte Abgleich bringt sie aufs iPhone.
+async function claudeVorlagenHolen() {
+  try {
+    const antwort = await fetch('/api/claude-vorlagen', { cache: 'no-store' });
+    if (!antwort.ok) return;
+    const v = await antwort.json();
+    if (!v?.auftrag) return;
+    const einst = await einstellungenLaden();
+    if ((einst.claudeVorlagen?.stand ?? 0) >= v.stand) return;
+    await einstellungenSpeichern({ ...einst, claudeVorlagen: { auftrag: v.auftrag, maschinenliste: v.maschinenliste, stil: v.stil, stand: v.stand } });
+  } catch (e) {
+    console.warn('Vorlagen für Claude nicht geholt', e);
+  }
+}
+
 // Laptop: einmal beim Start ermitteln. Auf dem iPhone gibt es /api/status nicht, dann bleibt es false.
 let laptop = false;
 async function laptopErmitteln() {
@@ -515,6 +531,7 @@ async function laptopErmitteln() {
       const einst = await einstellungenLaden();
       if (!einst.kartenEnde) await einstellungenSpeichern({ ...einst, kartenEnde: ende });
     }
+    if (status.laptop === true) claudeVorlagenHolen();
     return status.laptop === true;
   } catch {
     return false; // kein Laptop-Server

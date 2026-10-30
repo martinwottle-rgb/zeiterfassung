@@ -1,6 +1,8 @@
 // Lead: Daten am Kontakt (Anlass, Branche, Interesse, Maschine, Priorität, nächste Schritte) als Text fassen.
 // Dazu Anlass-Vorschlag aus den Reisen und der Text für die Outlook-Notiz.
-// Reines Modul ohne Imports, ohne DOM, ohne Speicher.
+// Reines Modul ohne DOM und ohne Speicher. Importiert nur die Namenslisten.
+import { VORNAMEN } from './vornamen.js';
+import { WEIBLICH } from './vornamen_geschlecht.js';
 
 export const LEAD_PRIORITAET = [
   { wert: 'A', text: 'Hot Lead' },
@@ -111,4 +113,192 @@ export function anlassVorschlag(datum, reisen) {
 // Notiz für Outlook: eigener Text und Lead-Block, durch Leerzeile getrennt
 export function outlookNotiz(notiz, lead) {
   return [txt(notiz), leadText(lead)].filter((s) => s !== '').join('\n\n');
+}
+
+// Erster Teil des Vornamens, klein („Hans-F.“ wird „hans“)
+function ersterVorname(vorname) {
+  return txt(vorname).toLowerCase().split(/[\s\-.]+/).filter((s) => s !== '')[0] || '';
+}
+
+// Geschlecht: 'm', 'w' oder '' (unbekannt). Die Anrede im Kontakt gilt vor dem Vornamen.
+export function geschlechtVon(k) {
+  const anrede = txt(k?.anrede).toLowerCase();
+  if (anrede === 'herr') return 'm';
+  if (anrede === 'frau') return 'w';
+  const name = ersterVorname(k?.vorname);
+  if (WEIBLICH.has(name)) return 'w';
+  if (VORNAMEN.has(name)) return 'm';
+  return '';
+}
+
+// Nur „Prof.“ und „Dr.“ aus dem Titel, in dieser Reihenfolge (ohne Punkt)
+function titelTeile(titel) {
+  const teile = txt(titel).toLowerCase().split(/[\s.()\-]+/);
+  const ergebnis = [];
+  if (teile.includes('prof')) ergebnis.push('Prof');
+  if (teile.includes('dr')) ergebnis.push('Dr');
+  return ergebnis;
+}
+
+// Anrede für die Mail: 'Sehr geehrter Herr …,' (de) oder 'Dear Mr …,' (en)
+export function mailAnrede(k, sprache) {
+  const kk = k || {};
+  const titel = titelTeile(kk.titel);
+  const vorname = txt(kk.vorname);
+  const nachname = txt(kk.nachname);
+  const geschlecht = geschlechtVon(kk);
+  const voll = [vorname, nachname].filter((s) => s !== '').join(' ');
+
+  if (sprache === 'en') {
+    if (!nachname) return 'Dear Sir or Madam,';
+    if (titel.length) return `Dear ${[...titel, nachname].join(' ')},`;
+    if (geschlecht === 'm') return `Dear Mr ${nachname},`;
+    if (geschlecht === 'w') return `Dear Ms ${nachname},`;
+    return `Dear ${voll},`;
+  }
+
+  if (!nachname) return 'Sehr geehrte Damen und Herren,';
+  const mitTitel = [...titel.map((t) => t + '.'), nachname].join(' ');
+  if (geschlecht === 'm') return `Sehr geehrter Herr ${mitTitel},`;
+  if (geschlecht === 'w') return `Sehr geehrte Frau ${mitTitel},`;
+  return `Guten Tag ${voll},`;
+}
+
+// Sprache der Mail: 'de' oder 'en'. Erst Notiz (ganze Wörter), dann Land, dann Mail-Endung.
+const SPRACHE_WORT = new Map([['en', 'en'], ['englisch', 'en'], ['englsich', 'en'], ['english', 'en'],
+  ['de', 'de'], ['deutsch', 'de'], ['german', 'de']]);
+const LAND_DE = ['deutschland', 'österreich', 'schweiz', 'germany', 'austria', 'switzerland'];
+const ENDUNG_DE = ['de', 'at', 'ch'];
+
+export function spracheVon(k) {
+  const kk = k || {};
+  for (const wort of txt(kk.notiz).toLowerCase().split(/[^\p{L}]+/u)) {
+    if (SPRACHE_WORT.has(wort)) return SPRACHE_WORT.get(wort);
+  }
+  const land = txt(kk.land).toLowerCase();
+  if (land) return LAND_DE.includes(land) ? 'de' : 'en';
+  const mail = txt(kk.email);
+  if (mail.includes('@')) {
+    const endung = mail.split('@').pop().split('.').pop().toLowerCase();
+    return ENDUNG_DE.includes(endung) ? 'de' : 'en';
+  }
+  return 'de';
+}
+
+// Notiz für Kontakt und KI: QR-Zeilen weg, Mails und Telefonnummern durch „[entfernt]“ ersetzt
+export function notizBereinigen(text) {
+  return txt(text)
+    .split('\n')
+    .filter((zeile) => !zeile.trimStart().startsWith('QR-Link:'))
+    .join('\n')
+    .replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '[entfernt]')
+    .replace(/\+?\d[\d\s\/()\-]*\d/g,(m) => (m.replace(/\D/g, '').length >= 7 ? '[entfernt]' : m))
+    .trim();
+}
+
+// Webseite: Feld web, sonst Mail-Domain (freie Anbieter zählen nicht)
+const FREIE_ANBIETER = ['gmail.com', 'gmx.de', 'gmx.net', 'web.de', 't-online.de', 'outlook.com', 'hotmail.com',
+  'yahoo.com', 'icloud.com'];
+
+function webseite(k) {
+  if (txt(k.web)) return txt(k.web);
+  const mail = txt(k.email);
+  if (!mail.includes('@')) return '';
+  const domain = mail.split('@').pop().toLowerCase();
+  return FREIE_ANBIETER.includes(domain) ? '' : domain;
+}
+
+// Block eines Kontakts für das Paket: nur Firma, Ort, Land, Webseite, Sprache, Lead und Notizen
+function kontaktBlock(nr, k) {
+  const zeilen = [`### ${nr}`];
+  const feld = (name, wert) => { if (wert) zeilen.push(`${name}: ${wert}`); };
+  feld('Firma', txt(k.firma));
+  feld('Ort', txt(k.ort));
+  feld('Land', txt(k.land));
+  feld('Webseite', webseite(k));
+  feld('Sprache der Mail', spracheVon(k));
+  const lead = leadText(k.lead);
+  if (lead) zeilen.push(lead);
+  feld('Notizen', notizBereinigen(k.notiz));
+  return zeilen.join('\n');
+}
+
+// Paket für die KI: Auftrag, Stilvorlagen, Maschinenliste, Kontakte mit Nummern L01, L02 …
+// Ohne Vorname, Nachname, Mail, Telefon, Mobil und Straße.
+export function paketBauen({ anlass, kontakte, vorlagen }) {
+  const v = vorlagen || {};
+  const sortiert = (Array.isArray(kontakte) ? kontakte : []).filter(Boolean)
+    .slice().sort((a, b) => txt(a.firma).localeCompare(txt(b.firma), 'de'));
+  const nummern = {};
+  const teile = [`# ${txt(anlass) || 'Ohne Anlass'}`, txt(v.auftrag)];
+  (Array.isArray(v.stil) ? v.stil : []).forEach((s, i) => teile.push(`## Stilvorlage ${i + 1}\n${txt(s)}`));
+  teile.push(`## Maschinenliste (ohne Preise)\n${txt(v.maschinenliste)}`);
+  teile.push('## Kontakte');
+  sortiert.forEach((k, i) => {
+    const nr = 'L' + String(i + 1).padStart(2, '0');
+    nummern[nr] = k.id;
+    teile.push(kontaktBlock(nr, k));
+  });
+  return { text: teile.filter((t) => t !== '').join('\n\n'), nummern };
+}
+
+// Antwort der KI lesen: erst der ```json-Block, sonst der Text von „[“ bis „]“
+export function ergebnisLesen(text, nummern) {
+  const eintraege = [];
+  const fehler = [];
+  const t = typeof text === 'string' ? text : '';
+  const block = /```json\s*([\s\S]*?)```/.exec(t);
+  let roh = null;
+  if (block) roh = block[1];
+  else {
+    const a = t.indexOf('[');
+    const b = t.lastIndexOf(']');
+    if (a !== -1 && b > a) roh = t.slice(a, b + 1);
+  }
+  let daten = null;
+  try { daten = roh === null ? null : JSON.parse(roh); } catch { daten = null; }
+  if (!Array.isArray(daten)) return { eintraege, fehler: ['Kein JSON-Block in der Antwort gefunden'] };
+
+  for (const o of daten) {
+    if (!o || typeof o !== 'object') continue;
+    const nr = String(o.nr ?? '').trim();
+    if (!Object.prototype.hasOwnProperty.call(nummern || {}, nr)) {
+      fehler.push(`${nr}: Nummer gehört zu keinem Kontakt dieses Pakets`);
+      continue;
+    }
+    const prioritaet = txt(o.prioritaet).toUpperCase();
+    const roh2 = o.passung === undefined || o.passung === null || o.passung === '' ? NaN : Number(o.passung);
+    const passung = Number.isFinite(roh2) ? Math.min(5, Math.max(1, Math.round(roh2))) : 3;
+    eintraege.push({
+      nr,
+      kontaktId: nummern[nr],
+      prioritaet: ['A', 'B', 'C'].includes(prioritaet) ? prioritaet : 'C',
+      passung,
+      schritt: txt(o.schritt),
+      schrittText: txt(o.schrittText),
+      recherche: txt(o.recherche),
+      maschinen: txt(o.maschinen),
+      plan: txt(o.plan),
+      betreff: txt(o.betreff),
+      mail: txt(o.mail),
+    });
+  }
+  return { eintraege, fehler };
+}
+
+// Punkte für die Rangliste: Priorität, Schritt und Passung (× 5)
+const PRIO_PUNKTE = new Map([['A', 300], ['B', 200], ['C', 100]]);
+const SCHRITT_PUNKTE = new Map([['Angebot', 50], ['Werksbesuch', 40], ['Versuch im Kundenzentrum', 35],
+  ['Technisches Gespräch', 30], ['Nachfassanruf', 20], ['Unterlagen', 10]]);
+
+export function punktzahl(eintrag, lead) {
+  const e = eintrag || {};
+  const prio = txt(lead?.prioritaet) || txt(e.prioritaet);
+  return (PRIO_PUNKTE.get(prio) ?? 100) + (SCHRITT_PUNKTE.get(txt(e.schritt)) ?? 0) + (Number(e.passung) || 0) * 5;
+}
+
+// Mail mit Anrede: { betreff, text }
+export function mailVollText(eintrag, k, sprache) {
+  const e = eintrag || {};
+  return { betreff: txt(e.betreff), text: mailAnrede(k, sprache) + '\n\n' + txt(e.mail) };
 }

@@ -1,0 +1,70 @@
+// Häufige weibliche Vornamen, klein geschrieben: deutsch, international, türkisch, arabisch, slawisch,
+// niederländisch und englisch. Hilft lead.js, die Anrede (Frau oder Herr) zu finden, wenn der Kontakt sie nicht hat.
+// Männliche Namen stehen hier nie; mehrdeutige Namen (z. B. „andrea“ im Italienischen) fehlen bewusst.
+export const WEIBLICH = new Set([
+  // deutsch
+  'adelheid', 'agnes', 'alexandra', 'alice', 'alina', 'alma', 'amelie', 'angelika', 'anja', 'anke', 'anna',
+  'annabel', 'annabell', 'anne', 'annegret', 'annette', 'annika', 'antje', 'astrid', 'barbara', 'bärbel', 'baerbel',
+  'beate', 'bettina', 'birgit', 'brigitte', 'britta', 'carina', 'carla', 'carmen', 'caroline', 'cathrin', 'charlotte',
+  'christa', 'christiane', 'christina', 'christine', 'clara', 'claudia', 'corinna', 'cornelia', 'dagmar', 'daniela',
+  'doris', 'dorothea', 'eleonore', 'elena', 'elfriede', 'elisabeth', 'elke', 'ella', 'ellen', 'emma', 'erika', 'erna',
+  'esther', 'eva', 'evelyn', 'franziska', 'frauke', 'frieda', 'freya', 'gabriele', 'gerda', 'gerlinde', 'gertrud',
+  'gisela', 'grete', 'gudrun', 'hanna', 'hannah', 'hedwig', 'heidemarie', 'heidi', 'heike', 'helga', 'helene', 'henriette',
+  'hildegard', 'hilde', 'ilse', 'ina', 'inge', 'ingeborg', 'ingrid', 'irene', 'iris', 'isabel', 'jana', 'janina', 'jasmin',
+  'jennifer', 'jessica', 'johanna', 'josefine', 'julia', 'juliane', 'julie', 'karin', 'katharina', 'kathrin', 'katja',
+  'katrin', 'kerstin', 'kirsten', 'klara', 'lara', 'laura', 'lea', 'lena', 'leonie', 'lilly', 'lina', 'linda', 'lisa',
+  'lisbeth', 'liselotte', 'lore', 'lotte', 'louise', 'luisa', 'luise', 'lydia', 'magdalena', 'mara', 'maria', 'marie',
+  'marion', 'marlene', 'marlies', 'martina', 'mathilde', 'melanie', 'merle', 'michaela', 'mia', 'mona', 'monika',
+  'nadine', 'nathalie', 'natascha', 'nele', 'nicole', 'nina', 'nora', 'olga', 'paula', 'pauline', 'petra', 'pia',
+  'rebecca', 'regina', 'renate', 'rita', 'romy', 'rosa', 'rosemarie', 'ruth', 'sabine', 'sandra', 'sara', 'sarah',
+  'saskia', 'selina', 'sigrid', 'silke', 'simone', 'sina', 'sofia', 'sophie', 'stefanie', 'stella', 'susanne', 'svenja',
+  'sybille', 'tabea', 'tamara', 'tanja', 'tatjana', 'teresa', 'theresa', 'tina', 'ulrike', 'ursel', 'ursula', 'ute',
+  'uta', 'valerie', 'vanessa', 'vera', 'veronika', 'viola', 'waltraud', 'wiebke', 'yvonne', 'zoe', 'anita', 'antonia',
+  'bianca', 'brunhilde', 'carolin', 'carolina', 'cecilia', 'dana', 'denise', 'diana', 'doreen', 'edeltraud', 'edith',
+  'elli', 'emilia', 'erdmute', 'eveline', 'frederike', 'friederike', 'gerlind', 'giesela', 'gitta', 'gerhild', 'hannelore',
+  'heidrun', 'hella', 'hermine', 'hertha', 'hiltrud', 'ida', 'ines', 'inka', 'jacqueline', 'janine', 'jeanette', 'jolanda',
+  'judith', 'julianne', 'kasia', 'katrina', 'katharine', 'käthe', 'karina', 'kornelia', 'lieselotte', 'liesl',
+  'lilli', 'lioba', 'lisette', 'lotti', 'luzie', 'madlen', 'magda', 'maike', 'manuela', 'marei', 'mareike', 'margarete',
+  'margit', 'marina', 'marita', 'marleen', 'marta', 'martha', 'maxi', 'meike', 'mirjam', 'miriam', 'nadja', 'natalie',
+  'noemi', 'ottilie', 'paulina', 'peggy', 'ramona', 'rosalie', 'rosi', 'rose', 'rosmarie', 'sabrina', 'sanne', 'sigrun',
+  'silvia', 'sonja', 'stephanie', 'susi', 'sylvia', 'tatiana', 'thea', 'trude', 'ulla', 'ulrica', 'vivien', 'wilhelmine',
+  'xenia', 'yasmin', 'ziska', 'zita', 'annerose', 'annemarie', 'anneliese', 'brigitta', 'christel', 'dorothee', 'elfi',
+  'gerburg', 'hanne', 'heidelinde', 'ilona', 'ingelore', 'irmgard', 'irmtraud', 'jutta', 'karla', 'kathi', 'lenore',
+  'lisel', 'liane', 'magdalene', 'mechthild', 'meta', 'ortrud', 'rosalinde', 'rotraut', 'sieglinde', 'simona', 'sophia',
+  'thekla', 'waltrud', 'wilma', 'wiltrud', 'giesela',
+
+  // englisch und international (romanisch, skandinavisch, niederländisch, slawisch, arabisch, indisch)
+  'abigail', 'abby', 'amanda', 'amber', 'amelia', 'amy', 'angela', 'becky', 'beth', 'beverly', 'brenda', 'carly',
+  'carolyn', 'catherine', 'cheryl', 'cynthia', 'danielle', 'debbie', 'deborah', 'debra', 'diane', 'donna', 'dorothy',
+  'elizabeth', 'emily', 'evie', 'frances', 'gemma', 'georgia', 'gloria', 'grace', 'hailey', 'harriet', 'hayley', 'heather',
+  'helen', 'holly', 'imogen', 'isabelle', 'janet', 'janice', 'jane', 'jodie', 'joan', 'joanne', 'joyce', 'judy', 'karen',
+  'katie', 'kate', 'katherine', 'kathleen', 'kathryn', 'kayla', 'kimberly', 'kirsty', 'lauren', 'leah', 'lindsay',
+  'lindsey', 'lori', 'lucy', 'madison', 'margaret', 'marilyn', 'mary', 'megan', 'melissa', 'michelle', 'molly', 'nancy',
+  'olivia', 'pamela', 'paige', 'patricia', 'rachel', 'sadie', 'samantha', 'scarlett', 'sharon', 'shirley',
+  'sophia', 'sophie', 'stacey', 'stephanie', 'susan', 'tammy', 'tracey', 'victoria', 'wendy', 'ava', 'bella', 'chloe',
+  'eleanor', 'hazel', 'isla', 'ivy', 'jenna', 'lily', 'lola', 'maya', 'nora', 'poppy', 'rosie', 'ruby', 'violet', 'zara',
+  'chiara', 'francesca', 'giulia', 'valentina', 'ana', 'beatriz', 'sofia', 'claire', 'camille', 'freja', 'linnea', 'maja',
+  'sanna', 'tove', 'kristina', 'femke', 'lieke', 'katarina', 'milena', 'nadia', 'marwa', 'mina', 'priya', 'anjali',
+  'anouk', 'fleur', 'marloes', 'anneke', 'daphne', 'esmee', 'noortje', 'marieke', 'nienke', 'joke', 'carolien', 'floor',
+  'roos', 'lisanne', 'manon', 'elise', 'maartje', 'annelies', 'yara', 'eline', 'myriam', 'marije',
+
+  // türkisch
+  'ipek', 'ayse', 'ayşe', 'aysel', 'aysegül', 'aylin', 'elif', 'zeynep', 'fatma', 'merve', 'nesibe', 'esra', 'emine',
+  'hatice', 'sevda', 'derya', 'gül', 'gülsen', 'özlem', 'selin', 'seda', 'dilek', 'büşra', 'busra', 'ceren', 'ebru',
+  'hülya', 'nurcan', 'sibel', 'cansu', 'gamze', 'nazlı', 'nazli', 'sena', 'tuba', 'ece', 'pınar', 'pinar', 'berna',
+  'meltem', 'zehra', 'havva', 'sevim', 'meral', 'nalan', 'leyla', 'lale', 'hande', 'duygu', 'sümeyye', 'sumeyye',
+  'damla', 'ilknur', 'betül', 'kübra', 'esma', 'sema', 'fadime', 'gülay', 'songül', 'sevgi', 'bahar', 'tülin', 'yeliz',
+  'ayten', 'gözde', 'nermin', 'şule', 'feride', 'zuhal', 'hacer', 'neslihan', 'nilgün', 'ceyda', 'aslı', 'ezgi', 'pelin',
+  'ilayda', 'bengü',
+
+  // arabisch
+  'fatima', 'aisha', 'aicha', 'amira', 'layla', 'samira', 'salma', 'rania', 'dina', 'huda', 'hala', 'maryam', 'mariam',
+  'zainab', 'khadija', 'rima', 'reem', 'dalia', 'hiba', 'hanan', 'sahar', 'yasmina', 'ghada', 'asmaa', 'nawal', 'najla',
+  'jamila', 'farida', 'souad', 'safia',
+
+  // slawisch
+  'natalia', 'natalija', 'natalya', 'svetlana', 'irina', 'ludmila', 'katarzyna', 'agnieszka', 'jelena', 'ljubica',
+  'vesna', 'mirjana', 'marija', 'sanja', 'jovana', 'ivana', 'zuzana', 'lenka', 'jitka', 'bozena', 'halina', 'oksana',
+  'julija', 'yulia', 'anastasia', 'ekaterina', 'katerina', 'daria', 'polina', 'zlata', 'lidija', 'ewa', 'zofia', 'iwona',
+  'renata', 'dorota', 'marzena', 'dragana', 'snezana', 'dubravka', 'ivona', 'alona', 'sofija', 'vladislava', 'karolina',
+]);

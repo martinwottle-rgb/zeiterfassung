@@ -1273,3 +1273,64 @@ label.belege-zeile { cursor: pointer; }
 .beleg-eur { display: flex; flex-direction: column; gap: 6px; }
 .beleg-eur[hidden] { display: none; }
 .beleg-kurs { margin: -2px 0 0; font-size: .8125rem; }
+
+/* Auswertung */
+.auswertung-form { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.auswertung-form input[type="date"] { min-width: 0; width: 100%; }
+.auswertung-feldname { margin: 0; font-size: .875rem; font-weight: 600; color: var(--text-2); }
+.auswertung-segment { display: flex; width: 100%; }
+.auswertung-segment .segment-teil { flex: 1 1 0; min-width: 0; }
+.auswertung-segment .segment-teil span {
+  display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 8px 10px;
+  white-space: normal; text-align: center; line-height: 1.2;
+}
+.auswertung-panel { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.auswertung-panel[hidden] { display: none; }
+.auswertung-zeitraum { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.auswertung-zeitraum .feld { min-width: 0; }
+.auswertung-schalter {
+  display: flex; align-items: center; gap: 12px; min-height: 44px; font-weight: 600; cursor: pointer;
+}
+.auswertung-schalter input { width: 22px; height: 22px; margin: 0; flex: none; accent-color: var(--akzent); }
+.auswertung-zaehler { margin: 0; font-weight: 600; color: var(--text); }
+.auswertung-hinweis { margin: 0; }
+.auswertung-fuss { display: flex; flex-wrap: wrap; gap: 10px; }
+.auswertung-fuss .knopf { flex: 0 1 auto; }
+.auswertung-vorschau {
+  margin: 0; max-height: 40vh; overflow: auto; padding: 12px; border-radius: 12px;
+  background: var(--segment); font: inherit; font-size: .875rem; line-height: 1.45;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.auswertung-meldung { margin: 0; font-weight: 600; }
+.auswertung-fehlerliste { margin: 0; padding-left: 20px; font-size: .875rem; color: var(--warnung); }
+.auswertung-zurueck { margin: 0 0 8px; }
+
+/* Liste der Läufe */
+.auswertung-lauf { display: flex; align-items: center; gap: 12px; }
+.auswertung-lauf .liste-text { flex: 1 1 auto; min-width: 0; }
+.auswertung-status { flex: none; font-size: .8125rem; font-weight: 600; color: var(--text-2); }
+.auswertung-status-ja { color: var(--text); }
+
+/* Prioritätenliste eines Laufs */
+button.auswertung-zeile { width: 100%; background: transparent; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.auswertung-zeile { display: flex; align-items: center; gap: 12px; }
+.auswertung-zeile .liste-text { flex: 1 1 auto; min-width: 0; }
+.auswertung-zeile-kopf { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
+.auswertung-zeile .lead-prio { min-height: 28px; padding: 2px 12px; font-size: .8125rem; }
+.auswertung-vorschlag { font-size: .75rem; color: var(--text-2); }
+.auswertung-wert { flex: none; display: flex; flex-direction: column; align-items: flex-end; text-align: right; }
+.auswertung-passung { font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.auswertung-punkte { font-size: .8125rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+
+/* Detail eines Kontakts im Sheet */
+.auswertung-detail { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.auswertung-detail-name { margin: 0; font-weight: 600; color: var(--text); overflow-wrap: anywhere; }
+.auswertung-bild { display: block; width: 100%; max-width: 160px; height: auto; border-radius: 10px; }
+.auswertung-abschnitt { margin: 8px 0 0; font-size: .875rem; font-weight: 600; color: var(--text-2); }
+.auswertung-text { margin: 0; font-size: .9375rem; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.auswertung-schritt { margin: 0; font-weight: 600; }
+.auswertung-betreff { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.auswertung-mail {
+  font: inherit; font-size: .875rem; max-height: 40vh; overflow: auto; padding: 12px; border-radius: 12px;
+  background: var(--segment);
+}

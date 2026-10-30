@@ -7,6 +7,7 @@ import { alle } from './speicher.js';
 import { kontaktName } from './kontakte.js';
 import { kontaktErfassen, kontaktSeiteZeichnen, outlookZustand } from './kontakt_sheet.js';
 import { ausDatumText } from './zeit.js';
+import { auswertungStarten } from './auswertung_sheet.js';
 import * as lead from './lead.js';
 
 const SORTIERUNGEN = [
@@ -263,6 +264,7 @@ export async function zeigen(ziel, kontext) {
         <p class="notiz zahl" data-anzahl></p>
       </div>
       <nav class="aktionen" aria-label="Kontakte">
+        <button type="button" class="knopf" data-auswerten>Auswerten</button>
         <button type="button" class="knopf haupt" data-erfassen>Kontakt erfassen</button>
       </nav>
     </header>
@@ -282,6 +284,7 @@ export async function zeigen(ziel, kontext) {
 
   ziel.querySelector('[data-anzahl]').textContent = anzahlText(kontakte.length);
   ziel.querySelector('[data-erfassen]').addEventListener('click', () => kontaktErfassen(kontext));
+  ziel.querySelector('[data-auswerten]').addEventListener('click', () => auswertungStarten(kontext));
 
   const liste = ziel.querySelector('[data-liste]');
   const suche = ziel.querySelector('#kontakt-suche-feld');
