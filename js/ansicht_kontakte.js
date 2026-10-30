@@ -3,7 +3,7 @@
 // Hinweis und Filter für noch nicht geprüfte Kontakte. Jede Zeile zeigt Name, Firma und Ort sowie den
 // Outlook-Zustand als Punkt mit Text für Screenreader, bei ungeprüften Kontakten stattdessen „ungeprüft“.
 // Antippen öffnet das Detail. Die Liste kommt direkt aus dem Speicher (kontext.daten kennt keine Kontakte).
-import { alle } from './speicher.js';
+import { alle, einstellungenLaden } from './speicher.js';
 import { kontaktName } from './kontakte.js';
 import { kontaktErfassen, kontaktSeiteZeichnen, outlookZustand } from './kontakt_sheet.js';
 import { ausDatumText } from './zeit.js';
@@ -284,7 +284,12 @@ export async function zeigen(ziel, kontext) {
 
   ziel.querySelector('[data-anzahl]').textContent = anzahlText(kontakte.length);
   ziel.querySelector('[data-erfassen]').addEventListener('click', () => kontaktErfassen(kontext));
-  ziel.querySelector('[data-auswerten]').addEventListener('click', () => auswertungStarten(kontext));
+  // Gibt es schon Auswertungen, zuerst deren Liste (dort „Neue Auswertung“), sonst gleich eine neue starten
+  ziel.querySelector('[data-auswerten]').addEventListener('click', async () => {
+    const einst = await einstellungenLaden().catch(() => ({}));
+    if ((einst.auswertungen ?? []).length) location.hash = '#auswertung';
+    else auswertungStarten(kontext);
+  });
 
   const liste = ziel.querySelector('[data-liste]');
   const suche = ziel.querySelector('#kontakt-suche-feld');
