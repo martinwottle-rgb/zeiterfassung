@@ -373,7 +373,7 @@ async function listeZeigen(ziel, kontext, auswertungen) {
 
   ziel.replaceChildren(linkZeile, kopf);
   if (auswertungen.length === 0) {
-    ziel.append(el('p', 'leer', 'Noch keine Auswertung. Starte sie über Kontakte, Auswerten.'));
+    ziel.append(el('p', 'leer', 'Noch keine Auswertung. Starte sie über Kontakte, Auswertungen.'));
     return;
   }
   const liste = el('ul', 'liste auswertung-liste');

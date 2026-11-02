@@ -264,7 +264,7 @@ export async function zeigen(ziel, kontext) {
         <p class="notiz zahl" data-anzahl></p>
       </div>
       <nav class="aktionen" aria-label="Kontakte">
-        <button type="button" class="knopf" data-auswerten>Auswerten</button>
+        <button type="button" class="knopf" data-auswerten>Auswertungen</button>
         <button type="button" class="knopf haupt" data-erfassen>Kontakt erfassen</button>
       </nav>
     </header>

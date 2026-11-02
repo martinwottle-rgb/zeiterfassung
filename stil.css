@@ -98,6 +98,9 @@
   color-scheme: dark;
 }
 :root[data-theme="light"] { color-scheme: light; }
+/* Aufklappliste von Auswahlfeldern in den Farben der App (sonst weiß mit heller Schrift, wenn das Feld selbst durchsichtig ist) */
+select option { background-color: var(--karte); color: var(--text); }
+select option:checked { background-color: var(--tint); color: var(--tint-text); }
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
