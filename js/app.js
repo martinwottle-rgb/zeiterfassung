@@ -4,9 +4,10 @@ import * as speicher from './speicher.js'; // bildLaden kommt aus speicher.js, w
 import { heute, jetztMinuten } from './zeit.js';
 import { mitternachtPruefen } from './stempeln.js';
 import { abgleichen, bildHolen, einrichtungLaden } from './abgleich.js';
+import { eingangUebernehmen } from './ablage.js';
 import { abwesenheitAm, sollMinuten, stempelZustand } from './rechnen.js';
 
-const ANSICHTEN = ['heute', 'woche', 'monat', 'abwesenheiten', 'reisen', 'belege', 'kontakte', 'auswertung', 'einstellungen', 'papierkorb', 'suche'];
+const ANSICHTEN = ['heute', 'woche', 'monat', 'abwesenheiten', 'reisen', 'belege', 'kontakte', 'auswertung', 'einstellungen', 'papierkorb', 'suche', 'ablage'];
 const ansicht = document.getElementById('ansicht');
 const rahmen = document.querySelector('.rahmen');
 const hintergrund = document.getElementById('sheet-hintergrund');
@@ -30,7 +31,7 @@ function ausHash() {
 }
 
 // Monat und Abwesenheiten gehören zum Reiter „Zeit“ (woche). Einstellungen hat ein eigenes Zahnrad.
-const REITER_VON = { monat: 'woche', abwesenheiten: 'woche', auswertung: 'kontakte', papierkorb: 'einstellungen' };
+const REITER_VON = { monat: 'woche', abwesenheiten: 'woche', auswertung: 'kontakte', papierkorb: 'einstellungen', ablage: 'heute' };
 
 function navAktualisieren(name) {
   const reiter = REITER_VON[name] ?? name;
@@ -617,6 +618,7 @@ async function abgleichStarten(grund) {
     abgleichZustand.zuletzt = Date.now();
     abgleichZustand.fehler = null;
     outlookUebernehmen(); // nur am Laptop, siehe unten
+    if (laptop) eingangUebernehmen().catch(() => {}); // Ablage vom Handy nach 00_Eingang
   } catch (e) {
     abgleichZustand.fehler = e?.message || 'Der Abgleich ist fehlgeschlagen.';
     console.warn('Abgleich fehlgeschlagen', grund, abgleichZustand.fehler);
@@ -898,6 +900,14 @@ document.addEventListener('visibilitychange', async () => {
 });
 window.addEventListener('online', () => abgleichStarten('online'));
 
+// Strg+F (Mac: Cmd+F) öffnet die Suche der App statt der Browsersuche
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f') {
+    e.preventDefault();
+    location.hash = '#suche';
+  }
+});
+
 // Ziehen zum Aktualisieren ----------------------------------------------
 // Nur Touch und Stift, nur ganz oben und nur nach unten. Der Indikator folgt mit halbem Weg (höchstens 90 px).
 // Ab 70 px Indikatorweg rastet er ein; beim Loslassen darüber läuft der Abgleich, sonst federt er sofort zurück.
@@ -1015,7 +1025,12 @@ setInterval(() => {
   laptopSicherung();
   setInterval(laptopSicherung, 60 * 60 * 1000);
   abgleichStarten('start');
+  // Takt: am Laptop jede Minute, solange das Fenster sichtbar ist (Ablage vom Handy kommt schnell an), sonst alle 10 Minuten
   setInterval(() => abgleichStarten('takt'), 10 * 60 * 1000);
+  if (laptop) {
+    setInterval(() => { if (!document.hidden) abgleichStarten('takt'); }, 60 * 1000);
+    eingangUebernehmen().catch(() => {});
+  }
   naechsteMinute();
   zeichnen();
 })();

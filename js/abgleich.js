@@ -7,7 +7,7 @@ import { exportieren, importieren, bilderOhneUpload, bildHochgeladen, bildLaden,
 import { verschluesseln, entschluesseln, b64Utf8AusText, textAusB64Utf8 } from './krypto.js';
 
 const EINRICHTUNG_SCHLUESSEL = 'zeit.abgleich';
-const LISTEN = ['bloecke', 'abwesenheiten', 'reisen', 'kontakte', 'belege'];
+const LISTEN = ['bloecke', 'abwesenheiten', 'reisen', 'kontakte', 'belege', 'ablage'];
 
 // Einrichtung laden. Bei Fehler oder fehlender Einrichtung: null.
 export function einrichtungLaden() {

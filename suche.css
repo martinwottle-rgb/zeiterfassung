@@ -32,3 +32,12 @@
   margin: 8px 4px 0;
   color: var(--text-2);
 }
+
+/* Handy (unter 900 px): Suche als runder Lupenknopf oben links neben dem Zahnrad statt als Reiter in der Leiste */
+.lupe { right: 68px; }
+@media (max-width: 899px) {
+  .navi li:has(> [data-ziel="suche"]) { display: none; }
+}
+@media (min-width: 900px) {
+  .lupe { display: none; }
+}

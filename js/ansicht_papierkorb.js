@@ -20,6 +20,7 @@ const ABSCHNITTE = [
   ['abwesenheiten', 'Abwesenheiten'],
   ['bloecke', 'Zeiteinträge'],
   ['auswertungen', 'Auswertungen'],
+  ['ablage', 'Ablage'],
 ];
 
 const ABWESENHEIT_ART = {
@@ -69,7 +70,7 @@ function loeschZeit(art, e) {
 // Reisen: Gruppen über reiseId (bzw. Kalenderkette wie reisenGruppieren); eine Gruppe ist gelöscht,
 // wenn alle ihre Tage gelöscht sind. Die Gruppe trägt geloeschtAm (Zeit des jüngsten Tags) und tage (Originale).
 // jetzt: Zeitpunkt in ms (Vorgabe: jetzt).
-export function papierkorbEintraege({ kontakte = [], belege = [], reisen = [], abwesenheiten = [], bloecke = [], auswertungen = [] }, jetzt = Date.now()) {
+export function papierkorbEintraege({ kontakte = [], belege = [], reisen = [], abwesenheiten = [], bloecke = [], auswertungen = [], ablage = [] }, jetzt = Date.now()) {
   const grenze = jetzt - TAGE_HALTEN * TAG_MS;
   const nachZeit = (liste) => liste
     .filter((e) => e && e.geloescht === true && zahl(e.geaendert) >= grenze)
@@ -98,6 +99,7 @@ export function papierkorbEintraege({ kontakte = [], belege = [], reisen = [], a
     abwesenheiten: nachZeit(abwesenheiten),
     bloecke: nachZeit(bloecke),
     auswertungen: auswertungenGeloescht,
+    ablage: nachZeit(ablage),
   };
 }
 
@@ -139,6 +141,13 @@ function beschreibe(art, e) {
         titel: text(e.anlass) || 'Auswertung',
         info: zeitraumVonBis(e.von, e.bis),
       };
+    case 'ablage': {
+      const n = (e.dateien ?? []).length;
+      return {
+        titel: [text(e.firma) || 'Ohne Zuordnung', text(e.art)].filter(Boolean).join(' · '),
+        info: `${n} ${n === 1 ? 'Datei' : 'Dateien'}`,
+      };
+    }
     default:
       return { titel: 'Eintrag', info: '' };
   }
@@ -204,15 +213,17 @@ function zeileBauen(art, e, kontext) {
 }
 
 export async function zeigen(ziel, kontext) {
-  const [kontakte, belege, reisen, abwesenheiten, bloecke, einst] = await Promise.all([
+  const [kontakte, belege, reisen, abwesenheiten, bloecke, einst, ablage] = await Promise.all([
     alle('kontakte'),
     alle('belege'),
     alle('reisen'),
     alle('abwesenheiten'),
     alle('bloecke'),
     einstellungenLaden(),
+    alle('ablage'),
   ]);
   const eintraege = papierkorbEintraege({
+    ablage,
     kontakte,
     belege,
     reisen,

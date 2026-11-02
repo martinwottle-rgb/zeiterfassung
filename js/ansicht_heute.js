@@ -3,10 +3,12 @@
 import { dauer, dauerMitVorzeichen, uhrzeit, langesDatum, monatsname, wochenbeginn, minutenAusUhrzeit, wochentag } from './zeit.js';
 import { tagesInfo, woche, kontostand, urlaubRest, urlaubAnspruch, hinweise, monat, offeneAltbloecke, laufendeBloecke } from './rechnen.js';
 import { stempeln } from './stempeln.js';
-import { speichern, loeschen } from './speicher.js';
+import { alle, speichern, loeschen } from './speicher.js';
 import { tagOeffnen } from './tag_sheet.js';
 import { pcVorschlaege, reiseVorschlaege, pcUebernehmen, verwerfen } from './vorschlaege.js';
 import { reiseOeffnen } from './reise_sheet.js';
+import { ablegenOeffnen, dateienZiehen } from './ablage_sheet.js';
+import { ablageSortiert, dateienAnzahl, datumUhr, eintragTitel, gesehenLesen } from './ansicht_ablage.js';
 
 const PAUSE_AB = 15;              // Lücken ab 15 min zählen als Pause, wie in rechnen.js
 const ACHSE_VON = 6 * 60;         // Zeitleiste mindestens 6 bis 20 Uhr
@@ -576,9 +578,92 @@ function kartenZeichnen(platz, bloecke, heute, kontext) {
   platz.replaceChildren(...karten);
 }
 
+// Karte Ablage ----------------------------------------------------------
+// Die Zeile mit dem Abgleich hört auf 'abgleich-status'. Beim Neuzeichnen beendet der vorige Zuhörer sich selbst.
+let ablageAbbruch = null;
+
+function uhrzeitMs(ms) {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
+async function ablageLaden() {
+  try {
+    return await alle('ablage');
+  } catch (e) {
+    console.warn('Ablage nicht geladen', e?.message);
+    return [];
+  }
+}
+
+// Zeile unter der Karte: Stand des Abgleichs und Knopf zum Anstoßen. Nicht eingerichtet: die Zeile fehlt.
+function ablageStatus(kontext) {
+  const zeile = el('div', { klasse: 'ablage-status' });
+  const text = el('p', { klasse: 'notiz', role: 'status' });
+  const knopf = el('button', { type: 'button', klasse: 'knopf knopf-klein', text: 'Jetzt abgleichen' });
+  knopf.addEventListener('click', () => kontext.abgleichJetzt());
+  zeile.append(text, knopf);
+
+  const zeichnen = () => {
+    const s = kontext.abgleichStatus();
+    zeile.hidden = !s.eingerichtet;
+    if (!s.eingerichtet) return;
+    if (s.laeuft) text.textContent = 'Abgleich läuft …';
+    else if (s.fehler) text.textContent = s.fehler;
+    else if (s.zuletzt) text.textContent = `Zuletzt abgeglichen um ${uhrzeitMs(s.zuletzt)}`;
+    else text.textContent = 'Noch nicht abgeglichen';
+    text.classList.toggle('fehler', !s.laeuft && Boolean(s.fehler));
+  };
+  zeichnen();
+
+  ablageAbbruch?.abort();
+  const abbruch = new AbortController();
+  ablageAbbruch = abbruch;
+  window.addEventListener('abgleich-status', () => {
+    if (!zeile.isConnected) {
+      abbruch.abort();
+      return;
+    }
+    zeichnen();
+  }, { signal: abbruch.signal });
+  return zeile;
+}
+
+// Karte Ablage: Überschrift führt zur Ansicht, Knopf zum Ablegen, die letzten drei Einträge, Hinweis auf neue
+// Einträge von der anderen Seite (noch nicht gesehen) und die Abgleich-Zeile. Am Laptop ist die Karte Ablagefläche.
+function karteAblage(liste, kontext) {
+  const eigene = kontext.laptop ? 'laptop' : 'handy';
+  const gesehen = gesehenLesen();
+  const neu = liste.filter((e) => e.quelle !== eigene && !gesehen.has(e.id)).length;
+  const titelId = 'k-ablage';
+
+  const ablegenKnopf = el('button', {
+    type: 'button', klasse: 'knopf haupt knopf-karte', text: kontext.laptop ? 'Datei aufs Handy' : 'Ablegen',
+  });
+  ablegenKnopf.addEventListener('click', () => ablegenOeffnen(kontext));
+
+  const letzte = liste.slice(0, 3).map((e) => el('li', { klasse: 'ablage-kurz-zeile' }, [
+    el('span', { klasse: 'liste-titel', text: eintragTitel(e) }),
+    el('span', { klasse: 'notiz', text: `${dateienAnzahl((e.dateien ?? []).length)} · ${datumUhr(e.erstellt ?? 0)}` }),
+  ]));
+
+  const karte = el('section', { klasse: 'karte karte-link', 'aria-labelledby': titelId }, [
+    el('h2', { id: titelId }, [el('a', { klasse: 'karte-ziel', href: '#ablage', text: 'Ablage' })]),
+    neu > 0 ? el('p', { klasse: 'notiz ablage-neu', text: `${neu} neu vom ${kontext.laptop ? 'iPhone' : 'Laptop'}` }) : null,
+    liste.length === 0
+      ? el('p', { klasse: 'notiz', text: 'Noch nichts abgelegt.' })
+      : el('ul', { klasse: 'ablage-kurz' }, letzte),
+    el('div', { klasse: 'karte-aktion' }, [ablegenKnopf]),
+    ablageStatus(kontext),
+  ]);
+  if (kontext.laptop) dateienZiehen(karte, kontext);
+  return karte;
+}
+
 export async function zeigen(ziel, kontext) {
   const { heute, jetzt } = kontext;
   const { bloecke, abwesenheiten: abw, einstellungen: einst } = kontext.daten;
+  const ablage = ablageSortiert(await ablageLaden());
 
   const info = tagesInfo(bloecke, abw, einst, heute, jetzt);
   const tage = woche(bloecke, abw, einst, wochenbeginn(heute), jetzt, heute);
@@ -646,6 +731,8 @@ export async function zeigen(ziel, kontext) {
         </div>
       </section>
 
+      <div data-ablage-platz></div>
+
       ${kontext.laptop ? '<div class="vorschlaege-platz" data-vorschlaege></div>' : ''}
       ${hinweisListe.length > 0 ? karteHinweise(hinweisListe) : ''}
     </div>`;
@@ -655,6 +742,9 @@ export async function zeigen(ziel, kontext) {
 
   // Karten oben: vergessenes Ausstempeln und mehrere laufende Blöcke
   kartenZeichnen(ziel.querySelector('[data-heute-karten]'), bloecke, heute, kontext);
+
+  // Karte Ablage an die Stelle nach der Monatskarte
+  ziel.querySelector('[data-ablage-platz]')?.replaceWith(karteAblage(ablage, kontext));
 
   // Stempeln: während des Aufrufs alle Stempelknöpfe sperren.
   const stempelKnoepfe = [...ziel.querySelectorAll('[data-stempel]')];

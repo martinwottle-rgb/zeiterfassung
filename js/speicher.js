@@ -4,8 +4,8 @@
 import { b64AusBytes, bytesAusB64 } from './krypto.js';
 
 const DB_NAME = 'zeiterfassung';
-const DB_VERSION = 3;
-const ARTEN = ['bloecke', 'abwesenheiten', 'reisen', 'kontakte', 'belege'];
+const DB_VERSION = 4;
+const ARTEN = ['bloecke', 'abwesenheiten', 'reisen', 'kontakte', 'belege', 'ablage'];
 const EINSTELLUNGEN_SCHLUESSEL = 'einstellungen';
 
 // Eine Verbindung pro Seite, als Promise zwischengespeichert.
@@ -25,6 +25,8 @@ function db() {
         if (!d.objectStoreNames.contains('kontakte')) d.createObjectStore('kontakte', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('belege')) d.createObjectStore('belege', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('bilder')) d.createObjectStore('bilder', { keyPath: 'id' });
+        // Ablage (Version 4): Dateien zwischen Handy und Laptop, die Dateien selbst liegen in 'bilder'
+        if (!d.objectStoreNames.contains('ablage')) d.createObjectStore('ablage', { keyPath: 'id' });
       };
       oeffnen.onsuccess = () => {
         const d = oeffnen.result;
@@ -199,8 +201,9 @@ export async function bildVerkleinern(blob) {
 }
 
 // Speichert ein Bild (vorher verkleinert, siehe bildVerkleinern) und gibt seine id zurück. Startet den Abgleich (daten-geaendert).
-export async function bildSpeichern(original) {
-  const blob = await bildVerkleinern(original);
+// Mit { original: true } bleibt das Bild unverändert (Ablage: „Original behalten“).
+export async function bildSpeichern(original, { original: unveraendert = false } = {}) {
+  const blob = unveraendert ? original : await bildVerkleinern(original);
   const id = crypto.randomUUID();
   const bytes = new Uint8Array(await blob.arrayBuffer());
   const t = await transaktion(['bilder'], 'readwrite');
@@ -253,9 +256,10 @@ export async function exportieren() {
   const reisen = await alle('reisen');
   const kontakte = await alle('kontakte');
   const belege = await alle('belege');
+  const ablage = await alle('ablage');
   const einstellungen = await einstellungenLaden();
   // Version bleibt 1: die Prüfung beim Import verlangt sie, die übrigen Felder sind optional.
-  return { version: 1, bloecke, abwesenheiten, reisen, kontakte, belege, einstellungen };
+  return { version: 1, bloecke, abwesenheiten, reisen, kontakte, belege, ablage, einstellungen };
 }
 
 // Schreibt einen Eintrag nur, wenn er neu ist oder neuer als der vorhandene (gleich: vorhandenen behalten).
@@ -271,7 +275,7 @@ function zusammenfuehren(speicher, eintrag, zaehler) {
 
 // Führt eine Sicherung in einer Transaktion mit dem Bestand zusammen.
 export async function importieren(daten) {
-  const t = await transaktion(['bloecke', 'abwesenheiten', 'reisen', 'kontakte', 'belege', 'einstellungen'], 'readwrite');
+  const t = await transaktion(['bloecke', 'abwesenheiten', 'reisen', 'kontakte', 'belege', 'ablage', 'einstellungen'], 'readwrite');
   const z = { n: 0 };                     // Anzahl tatsächlich übernommener Einträge
   for (const b of daten?.bloecke ?? []) if (b?.id != null) zusammenfuehren(t.objectStore('bloecke'), b, z);
   for (const a of daten?.abwesenheiten ?? []) if (a?.id != null) zusammenfuehren(t.objectStore('abwesenheiten'), a, z);
@@ -279,6 +283,7 @@ export async function importieren(daten) {
   for (const r of daten?.reisen ?? []) if (r?.id != null) zusammenfuehren(t.objectStore('reisen'), r, z);
   for (const k of daten?.kontakte ?? []) if (k?.id != null) zusammenfuehren(t.objectStore('kontakte'), k, z);
   for (const b of daten?.belege ?? []) if (b?.id != null) zusammenfuehren(t.objectStore('belege'), b, z);
+  for (const a of daten?.ablage ?? []) if (a?.id != null) zusammenfuehren(t.objectStore('ablage'), a, z);
   // Einstellungen nur übernehmen, wenn sie neuer sind
   const e = daten?.einstellungen;
   if (e) {

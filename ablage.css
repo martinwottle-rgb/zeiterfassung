@@ -1,0 +1,57 @@
+/* Ablage: Sheet „Ablegen“, Ansicht #ablage und Karte auf Heute. Farben nur über die Variablen aus stil.css. */
+
+/* Sheet: Knopf mit eingebautem Dateifeld; das Feld selbst bleibt unsichtbar, der Knopf ist das Ziel */
+.ablage-knopf { position: relative; }
+.ablage-knopf .nur-sr { pointer-events: none; }
+
+/* Gewählte Dateien */
+.ablage-auswahl { list-style: none; }
+.ablage-auswahl-zeile {
+  display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 10px 20px;
+  border-top: 1px solid var(--linie); color: var(--text);
+}
+.ablage-auswahl-zeile:first-child { border-top: 0; }
+.ablage-auswahl-text { display: flex; flex: 1 1 auto; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.ablage-vorschau { display: block; flex: 0 0 auto; max-height: 72px; width: auto; max-width: 96px; border-radius: 10px; }
+.ablage-leer { margin: 0; }
+
+/* Art: Segment darf in mehrere Zeilen umbrechen */
+.ablage-art { display: flex; flex-wrap: wrap; border-radius: 22px; }
+.ablage-art .segment-teil { flex: 1 1 auto; text-align: center; }
+
+/* Schalter „Original behalten“ */
+.ablage-schalter { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 44px; }
+.ablage-schalter .liste-titel { font-size: 1rem; font-weight: 600; min-width: 0; color: var(--text); }
+
+/* Ziehen: gestrichelter Rahmen, während eine Datei über der Fläche ist */
+.ablage-ziehen-aktiv { outline: 2px dashed var(--akzent); outline-offset: 6px; border-radius: 20px; }
+.ablage-ziehen-hinweis { margin: 0 0 12px; text-align: center; }
+
+/* Ansicht: Liste der Einträge */
+.ablage-liste { margin-top: 14px; }
+.ablage-eintrag > summary { list-style: none; cursor: pointer; }
+.ablage-eintrag > summary::-webkit-details-marker { display: none; }
+.ablage-kopf { color: var(--text); }
+.ablage-inhalt { padding: 0 20px 16px; border-top: 1px solid var(--linie); }
+.ablage-inhalt > .ablage-notiz { margin-top: 14px; color: var(--text); white-space: pre-line; overflow-wrap: anywhere; }
+.ablage-dateien { list-style: none; display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+.ablage-datei { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.ablage-datei-text { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.ablage-datei-knoepfe { display: flex; flex-wrap: wrap; gap: 8px; }
+.ablage-loeschen { margin-top: 14px; }
+.ablage-loeschen .karte-aktion { margin-top: 10px; }
+
+/* Vorschau eines Fotos im Sheet */
+.ablage-bild-huelle { text-align: center; }
+.ablage-bild-gross { display: block; max-width: 100%; height: auto; margin: 0 auto; border-radius: 12px; }
+
+/* Karte auf Heute */
+.ablage-neu { margin-bottom: 8px; color: var(--akzent); font-weight: 600; }
+.ablage-kurz { list-style: none; display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; }
+.ablage-kurz-zeile { display: flex; flex-direction: column; min-width: 0; overflow-wrap: anywhere; }
+.ablage-status[hidden] { display: none; }
+.ablage-status {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--linie);
+}
+.ablage-status .notiz { margin: 0; color: var(--text-2); }
