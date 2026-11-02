@@ -123,6 +123,10 @@ export async function reisekostentabelleErstellen(reise, monat) {
 
     const zeilen = [`Gespeichert: ${name}`];
     if (z.eingetragen.length) zeilen.push(await barMeldung(z.eingetragen, monat));
+    for (const v of z.verschoben) {
+      const [, m, d] = v.nach.split('-');
+      zeilen.push(`${belegKurz(v.beleg)}: kein Reisetag, beim ${d}.${m}. eingetragen.`);
+    }
     if (z.ohneReisetag.length) {
       zeilen.push(`${barWort(z.ohneReisetag.length)} ohne Reisetag nicht eingetragen: ${z.ohneReisetag.map(belegKurz).join(', ')}`);
     }

@@ -272,6 +272,8 @@ export function barZuordnen(tage = [], belege = [], monat = '') {
   const eingetragen = [];
   const ohneReisetag = [];
   const ohneEuro = [];
+  const verschoben = [];
+  const tageZwischen = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / 86400000);
   const bar = (belege || []).filter((b) => b && !b.geloescht && b.zahlung === 'bar'
     && String(b.datum ?? '').startsWith(String(monat ?? '')));
   for (const beleg of bar) {
@@ -280,16 +282,25 @@ export function barZuordnen(tage = [], belege = [], monat = '') {
       ohneEuro.push(beleg);
       continue;
     }
-    const tag = kopien.find((t) => t.datum === beleg.datum);
+    let tag = kopien.find((t) => t.datum === beleg.datum);
+    // Kein Reisetag am Belegdatum: Ausgaben kurz vor der Reise (z. B. am Vortag der Messe) gehören zum nächsten
+    // Reisetag, wenn er höchstens 2 Tage später liegt (Martin, 02.11.2026)
+    if (!tag) {
+      const spaeter = kopien
+        .filter((t) => t.datum > beleg.datum && tageZwischen(beleg.datum, t.datum) <= 2)
+        .sort((a, b) => (a.datum < b.datum ? -1 : 1));
+      tag = spaeter[0];
+      if (tag) verschoben.push({ beleg, nach: tag.datum });
+    }
     if (!tag) {
       ohneReisetag.push(beleg);
       continue;
     }
-    const feld = spalteFuer(beleg.kategorie);
-    tag[feld] = Math.round(((Number(tag[feld]) || 0) + betrag) * 100) / 100;
+    // Alles bar oder privat Bezahlte steht in der Tabelle in Spalte „Bar-zahlung“ (Feld bar)
+    tag.bar = Math.round(((Number(tag.bar) || 0) + betrag) * 100) / 100;
     eingetragen.push(beleg);
   }
-  return { tage: kopien, eingetragen, ohneReisetag, ohneEuro };
+  return { tage: kopien, eingetragen, ohneReisetag, ohneEuro, verschoben };
 }
 
 // Dateiname für einen Beleg, z. B. '2026-10-14 Tanken 76,12 EUR.pdf'
