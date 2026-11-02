@@ -84,45 +84,40 @@ async function alsJpeg(blob) {
   return canvasAlsBlob(c, 'image/jpeg', JPEG_QUALITAET);
 }
 
+// Dateityp aus den ersten Bytes, weil der gespeicherte Typ fehlen oder falsch sein kann (z. B. nach dem Abgleich)
+async function echterTyp(blob) {
+  const b = new Uint8Array(await blob.slice(0, 8).arrayBuffer());
+  if (b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) return 'application/pdf';
+  if (b[0] === 0xff && b[1] === 0xd8) return 'image/jpeg';
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+  return blob.type || '';
+}
+
 // Bildblob in das PDF-Dokument einbetten: JPEG und PNG direkt, alle anderen Typen über JPEG
-async function bildEinbetten(doc, blob) {
-  if (blob.type === 'image/jpeg') return doc.embedJpg(await blob.arrayBuffer());
-  if (blob.type === 'image/png') return doc.embedPng(await blob.arrayBuffer());
+async function bildEinbetten(doc, blob, typ) {
+  if (typ === 'image/jpeg') return doc.embedJpg(await blob.arrayBuffer());
+  if (typ === 'image/png') return doc.embedPng(await blob.arrayBuffer());
   const jpeg = await alsJpeg(blob);
   return doc.embedJpg(await jpeg.arrayBuffer());
 }
 
 // Belegbilder und PDF-Dateien in ein PDF; Reihenfolge der belege und ihrer bilder = Reihenfolge der Seiten.
 // bildLaden(id) liefert Promise<Blob|null>; fehlende Bilder (null) werden übersprungen.
+// Ein einzelnes kaputtes Bild bricht das PDF nicht ab: der Beleg steht danach in blob.ausgelassen.
 export async function belegePdf(belege, bildLaden) {
   const { PDFDocument } = await pdfLibLaden();
   const doc = await PDFDocument.create();
   let seiten = 0;
+  const ausgelassen = [];
 
   for (const beleg of belege ?? []) {
     for (const id of beleg.bilder ?? []) {
-      const blob = await bildLaden(id);
-      if (!blob) continue;
-
-      // PDF-Datei: alle Seiten unverändert übernehmen
-      if (blob.type === 'application/pdf') {
-        const quelle = await PDFDocument.load(await blob.arrayBuffer(), { ignoreEncryption: true });
-        const kopien = await doc.copyPages(quelle, quelle.getPageIndices());
-        for (const seite of kopien) doc.addPage(seite);
-        seiten += kopien.length;
-        continue;
+      try {
+        seiten += await seiteAnhaengen(doc, PDFDocument, await bildLaden(id));
+      } catch (err) {
+        console.error('Belegbild übersprungen', id, err);
+        if (!ausgelassen.includes(beleg)) ausgelassen.push(beleg);
       }
-
-      // Bild: auf eine A4-Seite einpassen, Seitenverhältnis erhalten, zentriert, mit Rand
-      const bild = await bildEinbetten(doc, blob);
-      const quer = bild.width > bild.height;
-      const [breite, hoehe] = quer ? A4_QUER : A4_HOCH;
-      const skala = Math.min((breite - 2 * RAND) / bild.width, (hoehe - 2 * RAND) / bild.height);
-      const w = bild.width * skala;
-      const h = bild.height * skala;
-      const seite = doc.addPage([breite, hoehe]);
-      seite.drawImage(bild, { x: (breite - w) / 2, y: (hoehe - h) / 2, width: w, height: h });
-      seiten++;
     }
   }
 
@@ -132,7 +127,34 @@ export async function belegePdf(belege, bildLaden) {
   doc.setCreator('');
   doc.setProducer('');
   const bytes = await doc.save();
-  return new Blob([bytes], { type: 'application/pdf' });
+  const ergebnis = new Blob([bytes], { type: 'application/pdf' });
+  ergebnis.ausgelassen = ausgelassen;
+  return ergebnis;
+}
+
+// Ein Bild oder eine PDF-Datei als Seite(n) anhängen; gibt die Zahl der neuen Seiten zurück
+async function seiteAnhaengen(doc, PDFDocument, blob) {
+  if (!blob) return 0;
+  const typ = await echterTyp(blob);
+
+  // PDF-Datei: alle Seiten unverändert übernehmen
+  if (typ === 'application/pdf') {
+    const quelle = await PDFDocument.load(await blob.arrayBuffer(), { ignoreEncryption: true });
+    const kopien = await doc.copyPages(quelle, quelle.getPageIndices());
+    for (const seite of kopien) doc.addPage(seite);
+    return kopien.length;
+  }
+
+  // Bild: auf eine A4-Seite einpassen, Seitenverhältnis erhalten, zentriert, mit Rand
+  const bild = await bildEinbetten(doc, blob, typ);
+  const quer = bild.width > bild.height;
+  const [breite, hoehe] = quer ? A4_QUER : A4_HOCH;
+  const skala = Math.min((breite - 2 * RAND) / bild.width, (hoehe - 2 * RAND) / bild.height);
+  const w = bild.width * skala;
+  const h = bild.height * skala;
+  const seite = doc.addPage([breite, hoehe]);
+  seite.drawImage(bild, { x: (breite - w) / 2, y: (hoehe - h) / 2, width: w, height: h });
+  return 1;
 }
 
 // Erste Seite einer PDF-Datei als JPEG (weißer Hintergrund); die längere Seite hat `breite` Pixel

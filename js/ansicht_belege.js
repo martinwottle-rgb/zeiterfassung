@@ -194,10 +194,15 @@ function zeileBauen(ctx, b, paare) {
 async function pdfAusgeben(ctx, liste, name) {
   const blob = await belegePdf(liste, ladeBild);
   if (ctx.kontext?.laptop) {
-    const antwort = await fetch('/api/beleg-pdf?name=' + encodeURIComponent(name), { method: 'POST', body: blob });
-    const json = await antwort.json();
-    if (!json?.ok) throw new Error('Speichern am Laptop fehlgeschlagen');
-    ctx.meldungZeigen(`Gespeichert: ${json.datei}`, { ordner: true });
+    let json = null;
+    try {
+      const antwort = await fetch('/api/beleg-pdf?name=' + encodeURIComponent(name), { method: 'POST', body: blob });
+      json = await antwort.json();
+    } catch {
+      throw new Error('Der Laptop-Server antwortet nicht. App einmal schließen und neu öffnen.');
+    }
+    if (!json?.ok) throw new Error(`Speichern am Laptop fehlgeschlagen${json?.fehler ? `: ${json.fehler}` : ''}.`);
+    ctx.meldungZeigen(`Gespeichert: ${json.datei}${ausgelassenText(blob)}`, { ordner: true, fehler: Boolean(blob.ausgelassen?.length) });
     return true;
   }
   const datei = new File([blob], name, { type: 'application/pdf' });
@@ -221,6 +226,17 @@ async function pdfAusgeben(ctx, liste, name) {
   return true;
 }
 
+// Hinweis auf Belege, deren Bild nicht ins PDF ging, z. B. „ Ohne Bild (nicht lesbar): 07.10. Parken.“
+function ausgelassenText(blob) {
+  const liste = blob.ausgelassen ?? [];
+  if (!liste.length) return '';
+  const namen = liste.map((b) => {
+    const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(b.datum ?? ''));
+    return [m ? `${m[2]}.${m[1]}.` : '', b.haendler || b.kategorie || 'Beleg'].filter(Boolean).join(' ');
+  });
+  return `. Bild nicht lesbar, fehlt im PDF: ${namen.join(', ')}`;
+}
+
 // Ausgabe mit Knopf-Zustand: während der Arbeit deaktiviert. Gibt true bei Erfolg zurück.
 async function ausgeben(ctx, liste, name, knopf) {
   const alt = knopf.textContent;
@@ -231,7 +247,8 @@ async function ausgeben(ctx, liste, name, knopf) {
   } catch (e) {
     console.error(e);
     ctx.meldungZeigen(
-      e?.message === 'Keine Belegbilder vorhanden.' ? 'Diese Belege haben keine Fotos.' : 'PDF konnte nicht erstellt werden.',
+      e?.message === 'Keine Belegbilder vorhanden.' ? 'Diese Belege haben keine Fotos oder keines ist lesbar.'
+        : `PDF konnte nicht erstellt werden: ${e?.message || 'unbekannter Fehler'}`,
       { fehler: true },
     );
     return false;
