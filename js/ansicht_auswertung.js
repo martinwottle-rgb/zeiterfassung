@@ -68,8 +68,10 @@ function prioritaetVon(k) {
 // Reiner Text ohne Markdown-Sterne (Kopieren, Mail-App, Anzeige, Excel). Outlook bekommt die Sterne, der Server macht daraus HTML.
 const ohneSterne = (t) => String(t ?? '').replace(/\*\*/g, '');
 
-// Mailtext aus dem Ergebnis, sonst null
-function mailVon(k) {
+// Mailtext: eigene Fassung von Martin (auswertung.mailEigen), sonst aus dem Ergebnis, sonst null
+export function mailVon(k) {
+  const eigen = k.auswertung?.mailEigen;
+  if (eigen && (text(eigen.betreff) || text(eigen.text))) return { betreff: text(eigen.betreff), text: String(eigen.text ?? ''), eigen: true };
   if (!k.auswertung) return null;
   try {
     return lead.mailVollText(k.auswertung, k, lead.spracheVon(k));
@@ -211,6 +213,74 @@ function laufZeile(lauf) {
   return a;
 }
 
+// Formular für die eigene Mailfassung, ersetzt die Zeile `stelle` im Sheet. Text mit **fett** bleibt für Outlook erhalten.
+function mailEditor(huelle, stelle, k, mail, fertig) {
+  const form = el('form', 'auswertung-mail-form');
+  form.noValidate = true;
+  const id = `mail-${String(k.id)}`;
+  const betreffLabel = el('label', null, 'Betreff');
+  betreffLabel.htmlFor = `${id}-betreff`;
+  const betreff = document.createElement('input');
+  betreff.type = 'text';
+  betreff.id = `${id}-betreff`;
+  betreff.value = mail?.betreff ?? '';
+  const textLabel = el('label', null, 'Text');
+  textLabel.htmlFor = `${id}-text`;
+  const feld = document.createElement('textarea');
+  feld.id = `${id}-text`;
+  feld.rows = 16;
+  feld.value = mail?.text ?? '';
+  const hinweis = el('p', 'notiz', 'Fett mit **Sternen**. Den Gruß setzt in Outlook deine Signatur.');
+  const fehler = el('p', 'notiz fehler');
+  fehler.hidden = true;
+
+  const knoepfe = el('div', 'auswertung-fuss');
+  const sichern = el('button', 'knopf haupt', 'Sichern');
+  sichern.type = 'submit';
+  const abbrechen = el('button', 'knopf', 'Abbrechen');
+  abbrechen.type = 'button';
+  abbrechen.addEventListener('click', fertig);
+  knoepfe.append(sichern, abbrechen);
+  if (k.auswertung?.mailEigen) {
+    const zurueck = el('button', 'knopf', 'Fassung von Claude nehmen');
+    zurueck.type = 'button';
+    zurueck.addEventListener('click', async () => {
+      try {
+        await auswertungSpeichern(k, () => ({ mailEigen: null }));
+        fertig();
+      } catch (e) {
+        console.warn('Mail nicht zurückgesetzt', e?.message);
+        fehler.textContent = SPEICHERN_FEHLER;
+        fehler.hidden = false;
+      }
+    });
+    knoepfe.append(zurueck);
+  }
+
+  form.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    if (!text(feld.value)) {
+      fehler.textContent = 'Bitte einen Text eingeben.';
+      fehler.hidden = false;
+      return;
+    }
+    sichern.disabled = true;
+    try {
+      await auswertungSpeichern(k, () => ({ mailEigen: { betreff: betreff.value.trim(), text: feld.value.trim(), geaendert: Date.now() } }));
+      fertig();
+    } catch (e) {
+      console.warn('Mail nicht gespeichert', e?.message);
+      fehler.textContent = SPEICHERN_FEHLER;
+      fehler.hidden = false;
+      sichern.disabled = false;
+    }
+  });
+
+  form.append(betreffLabel, betreff, textLabel, feld, hinweis, fehler, knoepfe);
+  stelle.replaceWith(form);
+  feld.focus();
+}
+
 // Sheet zu einem Kontakt: Name, Kartenfoto, Notiz, Abschnitte und Mail
 async function detailOeffnen(k, kontext) {
   const a = k.auswertung ?? {};
@@ -257,14 +327,26 @@ async function detailOeffnen(k, kontext) {
   }
   abschnitt('Plan', a.plan);
 
-  // Mail: Betreff und Text, Zeilenumbrüche bleiben erhalten
+  // Mail: Betreff und Text, Zeilenumbrüche bleiben erhalten. „Mail bearbeiten“ speichert eine eigene Fassung.
   const mail = mailVon(k);
-  if (mail && (text(mail.betreff) || text(mail.text))) {
+  const neuZeigen = () => detailOeffnen(k, kontext);
+  if (!mail) {
     huelle.append(el('h3', 'auswertung-abschnitt', 'Mail'));
+    const schreiben = el('button', 'knopf', 'Mail schreiben');
+    schreiben.type = 'button';
+    schreiben.addEventListener('click', () => mailEditor(huelle, schreiben, k, null, neuZeigen));
+    huelle.append(schreiben);
+  }
+  if (mail && (text(mail.betreff) || text(mail.text))) {
+    huelle.append(el('h3', 'auswertung-abschnitt', mail.eigen ? 'Mail (eigene Fassung)' : 'Mail'));
     if (text(mail.betreff)) huelle.append(el('p', 'auswertung-betreff', text(mail.betreff)));
     huelle.append(el('pre', 'auswertung-text auswertung-mail', ohneSterne(mail.text)));
 
     const aktionen = el('div', 'auswertung-fuss');
+    const bearbeitenKnopf = el('button', 'knopf', 'Mail bearbeiten');
+    bearbeitenKnopf.type = 'button';
+    bearbeitenKnopf.addEventListener('click', () => mailEditor(huelle, aktionen, k, mail, neuZeigen));
+    aktionen.append(bearbeitenKnopf);
     const kopierKnopf = el('button', 'knopf', 'Mail kopieren');
     kopierKnopf.type = 'button';
     kopierKnopf.addEventListener('click', async () => {

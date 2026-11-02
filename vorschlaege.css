@@ -297,3 +297,8 @@ body:has(.kontakt-seite) .zahnrad { display: none; }
 .kontakt-bild-frage { margin: 0; font-size: 1rem; text-align: center; }
 .kontakt-bild-fuss { display: flex; gap: 12px; }
 .kontakt-bild-fuss .knopf { flex: 1 1 0; }
+/* Eigene Mailfassung in der Auswertung */
+.auswertung-mail-form { display: grid; gap: 6px; margin-top: 8px; }
+.auswertung-mail-form label { font-size: .875rem; font-weight: 600; color: var(--text-2); margin-top: 6px; }
+.auswertung-mail-form input, .auswertung-mail-form textarea { width: 100%; box-sizing: border-box; }
+.auswertung-mail-form textarea { min-height: 280px; font: inherit; }
