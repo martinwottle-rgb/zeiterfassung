@@ -226,7 +226,7 @@ async function pdfAusgeben(ctx, liste, name) {
   return true;
 }
 
-// Hinweis auf Belege, deren Bild nicht ins PDF ging, z. B. „ Ohne Bild (nicht lesbar): 07.10. Parken.“
+// Hinweis auf Belege, deren Bild nicht ins PDF ging, z. B. „. Fehlt im PDF, …: 07.10. Parken“
 function ausgelassenText(blob) {
   const liste = blob.ausgelassen ?? [];
   if (!liste.length) return '';
@@ -234,7 +234,7 @@ function ausgelassenText(blob) {
     const m = /^\d{4}-(\d{2})-(\d{2})$/.exec(String(b.datum ?? ''));
     return [m ? `${m[2]}.${m[1]}.` : '', b.haendler || b.kategorie || 'Beleg'].filter(Boolean).join(' ');
   });
-  return `. Bild nicht lesbar, fehlt im PDF: ${namen.join(', ')}`;
+  return `. Fehlt im PDF, Bild nicht da oder nicht lesbar: ${namen.join(', ')}`;
 }
 
 // Ausgabe mit Knopf-Zustand: während der Arbeit deaktiviert. Gibt true bei Erfolg zurück.

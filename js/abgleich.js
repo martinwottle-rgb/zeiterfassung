@@ -121,6 +121,18 @@ function pruefeEinrichtung(e) {
   }
 }
 
+// Dateiinhalt (Base64) aus der Antwort der Contents-API. Ab 1 MB liefert GitHub dort keinen Inhalt
+// (encoding „none“), dann die Datei roh nachladen und selbst wieder in Base64 wandeln.
+async function inhaltB64(json, fetchFn, url, e) {
+  if (json.content && json.encoding !== 'none') return json.content;
+  if (!json.size) return json.content ?? '';
+  const roh = await anfrage(fetchFn, url, {
+    method: 'GET', headers: { ...kopf(e.token, false), 'Accept': 'application/vnd.github.raw' }, cache: 'no-store',
+  });
+  pruefeStatus(roh);
+  return b64Utf8AusText(await roh.text());
+}
+
 // Ferndatei holen. 404 heißt: noch nichts auf GitHub, dann null.
 async function holen(e, fetchFn) {
   const antwort = await anfrage(fetchFn, adresse(e), {
@@ -129,7 +141,7 @@ async function holen(e, fetchFn) {
   if (antwort.status === 404) return null;
   pruefeStatus(antwort);
   const json = await antwort.json();
-  return { content: json.content, sha: json.sha };
+  return { content: await inhaltB64(json, fetchFn, adresse(e), e), sha: json.sha };
 }
 
 // Ein Durchlauf. Bei Konflikt (409/422) wird der Aufrufer es noch einmal versuchen.
@@ -204,7 +216,7 @@ export async function bildHolen(id, e, fetchFn = fetch) {
   if (antwort.status === 404) return null;
   pruefeStatus(antwort);
   const json = await antwort.json();
-  const inhalt = await entschluesseln(textAusB64Utf8(json.content), e.passwort);
+  const inhalt = await entschluesseln(textAusB64Utf8(await inhaltB64(json, fetchFn, bildAdresse(e, id), e)), e.passwort);
   await bildAblegen({ id, typ: inhalt.typ, daten: inhalt.daten });
   return bildLaden(id);
 }

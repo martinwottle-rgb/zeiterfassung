@@ -103,7 +103,8 @@ async function bildEinbetten(doc, blob, typ) {
 
 // Belegbilder und PDF-Dateien in ein PDF; Reihenfolge der belege und ihrer bilder = Reihenfolge der Seiten.
 // bildLaden(id) liefert Promise<Blob|null>; fehlende Bilder (null) werden übersprungen.
-// Ein einzelnes kaputtes Bild bricht das PDF nicht ab: der Beleg steht danach in blob.ausgelassen.
+// Ein einzelnes kaputtes Bild bricht das PDF nicht ab. Belege ohne einzige Seite (kein, fehlendes oder kaputtes Bild)
+// stehen danach in blob.ausgelassen.
 export async function belegePdf(belege, bildLaden) {
   const { PDFDocument } = await pdfLibLaden();
   const doc = await PDFDocument.create();
@@ -111,14 +112,16 @@ export async function belegePdf(belege, bildLaden) {
   const ausgelassen = [];
 
   for (const beleg of belege ?? []) {
+    let eigene = 0;
     for (const id of beleg.bilder ?? []) {
       try {
-        seiten += await seiteAnhaengen(doc, PDFDocument, await bildLaden(id));
+        eigene += await seiteAnhaengen(doc, PDFDocument, await bildLaden(id));
       } catch (err) {
         console.error('Belegbild übersprungen', id, err);
-        if (!ausgelassen.includes(beleg)) ausgelassen.push(beleg);
       }
     }
+    if (!eigene) ausgelassen.push(beleg);
+    seiten += eigene;
   }
 
   if (!seiten) throw new Error('Keine Belegbilder vorhanden.');
