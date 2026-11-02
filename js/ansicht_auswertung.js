@@ -1,12 +1,15 @@
 // Auswertungen: ohne Parameter die Liste der Läufe (Messe-Pakete), mit Lauf-Id die Prioritätenliste eines Laufs.
 // Antippen eines Kontakts öffnet ein Sheet mit Recherche, Maschinen, nächstem Schritt, Plan und Mailentwurf.
-import { alle, bildLaden, einstellungenLaden, speichern } from './speicher.js';
+import { alle, bildLaden, einstellungenLaden, einstellungenSpeichern, speichern } from './speicher.js';
 import { kontaktName } from './kontakte.js';
 import { auswertungStarten, ergebnisEinlesen, paketErneutKopieren, textKopieren } from './auswertung_sheet.js';
 // Namensraum statt benannter Importe: fehlt eine Funktion, bricht so nicht das ganze Modul
 import * as lead from './lead.js';
 
 const text = (s) => String(s ?? '').trim();
+
+const SPEICHERN_FEHLER = 'Speichern hat nicht geklappt. Bitte noch einmal versuchen.';
+const LOESCHEN_FEHLER = 'Löschen hat nicht geklappt. Bitte noch einmal versuchen.';
 
 function el(tag, klasse, t) {
   const e = document.createElement(tag);
@@ -24,6 +27,13 @@ function datumDe(iso) {
 // Zeitraum als Text: „TT.MM.JJJJ bis TT.MM.JJJJ“
 function zeitraumText(lauf) {
   return [datumDe(lauf.von), datumDe(lauf.bis)].filter(Boolean).join(' bis ');
+}
+
+// Zeitpunkt (ms) als 'TT.MM.JJJJ' für das Erstelldatum eines Laufs
+function erstelltDatum(ms) {
+  const d = new Date(ms);
+  const z = (n) => String(n).padStart(2, '0');
+  return `${z(d.getDate())}.${z(d.getMonth() + 1)}.${d.getFullYear()}`;
 }
 
 // Ids aller Kontakte eines Laufs (eindeutig): aus den Gruppen, sonst aus den Nummern älterer Läufe
@@ -191,7 +201,9 @@ function laufZeile(lauf) {
   a.href = '#auswertung/' + encodeURIComponent(lauf.id);
   const block = el('span', 'liste-text');
   block.append(el('span', 'liste-titel', text(lauf.anlass) || 'Auswertung'));
-  block.append(el('span', 'liste-unter', [zeitraumText(lauf), anzahlText(anzahlKontakte(lauf))].filter(Boolean).join(' · ')));
+  const unter = [zeitraumText(lauf), anzahlText(anzahlKontakte(lauf))];
+  if (lauf.erstellt > 0) unter.push(`erstellt ${erstelltDatum(lauf.erstellt)}`);
+  block.append(el('span', 'liste-unter', unter.filter(Boolean).join(' · ')));
   const status = lauf.eingelesen
     ? el('span', 'auswertung-status auswertung-status-ja', 'eingelesen')
     : el('span', 'auswertung-status', 'wartet auf Ergebnis');
@@ -357,33 +369,315 @@ function kopfBauen(zurueck, titel, notiz, knoepfe = []) {
   return { linkZeile, kopf };
 }
 
-// Liste der Läufe, neueste oben
+// Feld mit Beschriftung. steuer hat schon seine id.
+function feld(name, steuer) {
+  const box = el('div', 'feld');
+  const label = el('label', null, name);
+  label.htmlFor = steuer.id;
+  box.append(label, steuer);
+  return box;
+}
+
+// Gelöschte Läufe bleiben im Speicher (weiches Löschen), erscheinen aber nirgends
+const aktiv = (lauf) => Boolean(lauf) && !lauf.geloescht;
+
+// Firmennamen eines Laufs: lauf.firmen ist ein Objekt { Nr: Firma } oder eine Liste, sonst leer
+function firmenVon(lauf) {
+  const f = lauf?.firmen;
+  if (!f || typeof f !== 'object') return [];
+  return Object.values(f).filter((v) => typeof v === 'string').map(text).filter(Boolean);
+}
+
+// Überflüssig: nicht gelöscht, ohne Ergebnis, und zu demselben Anlass (ohne Groß-/Kleinschreibung) gibt es einen eingelesenen Lauf
+export function ueberfluessigeLaeufe(liste) {
+  const aktive = (liste ?? []).filter(aktiv);
+  const schluessel = (lauf) => text(lauf.anlass).toLowerCase();
+  const eingelesen = new Set(aktive.filter((lauf) => lauf.eingelesen).map(schluessel));
+  // Läufe ohne Namen gehören zu keinem Anlass und werden nie aufgeräumt
+  return aktive.filter((lauf) => !lauf.eingelesen && schluessel(lauf) && eingelesen.has(schluessel(lauf)));
+}
+
+// Anzeige der Liste: ohne gelöschte, nach Suche (Anlass und Firmen) gefiltert, nach sortierung ('neu' | 'name' | 'status') sortiert
+export function laeufeFiltern(liste, suche, sortierung) {
+  const s = text(suche).toLowerCase();
+  const neueste = (a, b) => (b.erstellt ?? 0) - (a.erstellt ?? 0);
+  const nachName = (a, b) => text(a.anlass).localeCompare(text(b.anlass), 'de') || neueste(a, b);
+  // Erst die wartenden (nicht eingelesen), dann die eingelesenen; innerhalb neueste zuerst
+  const nachStatus = (a, b) => (Number(Boolean(a.eingelesen)) - Number(Boolean(b.eingelesen))) || neueste(a, b);
+  const sortFn = sortierung === 'name' ? nachName : sortierung === 'status' ? nachStatus : neueste;
+  return (liste ?? [])
+    .filter((lauf) => aktiv(lauf) && (!s || [text(lauf.anlass), ...firmenVon(lauf)].some((t) => t.toLowerCase().includes(s))))
+    .sort(sortFn);
+}
+
+// Sortierwahl der Liste, gemerkt in localStorage
+const SORTIERUNGEN = [
+  { wert: 'neu', text: 'Neueste zuerst' },
+  { wert: 'name', text: 'Name' },
+  { wert: 'status', text: 'Status' },
+];
+const MERKEN_SORTIERUNG = 'auswertung-sortierung';
+
+function sortierungLesen() {
+  try {
+    const wert = localStorage.getItem(MERKEN_SORTIERUNG);
+    if (SORTIERUNGEN.some((s) => s.wert === wert)) return wert;
+  } catch { /* Speicher nicht verfügbar: Vorgabe */ }
+  return 'neu';
+}
+
+function sortierungMerken(wert) {
+  try { localStorage.setItem(MERKEN_SORTIERUNG, wert); } catch { /* nicht merkbar: egal */ }
+}
+
+// Sheet „Auswertung bearbeiten“: Name und Zeitraum des Laufs
+function laufBearbeiten(lauf, kontext) {
+  const form = el('form', 'auswertung-form');
+  form.noValidate = true;
+
+  const name = document.createElement('input');
+  name.type = 'text';
+  name.id = 'auswertung-bearbeiten-name';
+  name.name = 'anlass';
+  name.autocomplete = 'off';
+  name.value = text(lauf.anlass);
+
+  const von = document.createElement('input');
+  von.type = 'date';
+  von.id = 'auswertung-bearbeiten-von';
+  von.name = 'von';
+  von.value = text(lauf.von);
+
+  const bis = document.createElement('input');
+  bis.type = 'date';
+  bis.id = 'auswertung-bearbeiten-bis';
+  bis.name = 'bis';
+  bis.value = text(lauf.bis);
+
+  const hinweis = el('p', 'notiz fehler');
+  hinweis.setAttribute('role', 'alert');
+  hinweis.hidden = true;
+  const hinweisZeigen = (t) => {
+    hinweis.textContent = t;
+    hinweis.hidden = false;
+  };
+
+  const sichern = el('button', 'knopf haupt', 'Sichern');
+  sichern.type = 'submit';
+  const fuss = el('div', 'auswertung-fuss');
+  fuss.append(sichern);
+  form.append(feld('Name', name), feld('Von', von), feld('Bis', bis), hinweis, fuss);
+
+  let beschaeftigt = false;
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (beschaeftigt) return;
+    const neuerName = name.value.trim();
+    if (!neuerName) {
+      hinweisZeigen('Bitte einen Namen eingeben.');
+      name.focus();
+      return;
+    }
+    if (!von.value || !bis.value) {
+      hinweisZeigen('Bitte Von und Bis ausfüllen.');
+      return;
+    }
+    if (von.value > bis.value) {
+      hinweisZeigen('Das Datum Bis liegt vor dem Datum Von.');
+      return;
+    }
+    beschaeftigt = true;
+    sichern.disabled = true;
+    hinweis.hidden = true;
+    try {
+      // Frisch laden, damit Änderungen seit dem Öffnen nicht überschrieben werden
+      const einst = await einstellungenLaden();
+      const auswertungen = (einst.auswertungen ?? []).map((l) => (String(l.id) === String(lauf.id)
+        ? { ...l, anlass: neuerName, von: von.value, bis: bis.value }
+        : l));
+      await einstellungenSpeichern({ ...einst, auswertungen });
+      kontext.sheet.schliessen();
+    } catch (err) {
+      console.error(err);
+      hinweisZeigen(SPEICHERN_FEHLER);
+    } finally {
+      beschaeftigt = false;
+      sichern.disabled = false;
+    }
+  });
+
+  kontext.sheet.oeffnen('Auswertung bearbeiten', form, { ohneRueckfrage: true });
+}
+
+// Sheet „Auswertung löschen“: weiches Löschen, die Kontakte bleiben erhalten
+function laufLoeschenOeffnen(lauf, kontext) {
+  const huelle = el('div', 'auswertung-form');
+  const frage = el('p', 'notiz', `„${text(lauf.anlass) || 'Auswertung'}“ wirklich löschen? Die Kontakte und ihre Ergebnisse bleiben erhalten.`);
+  const fehler = el('p', 'notiz fehler');
+  fehler.setAttribute('role', 'alert');
+  fehler.hidden = true;
+
+  const ja = el('button', 'knopf gefahr', 'Ja, löschen');
+  ja.type = 'button';
+  const nein = el('button', 'knopf', 'Nein, behalten');
+  nein.type = 'button';
+  nein.addEventListener('click', () => kontext.sheet.schliessen());
+
+  let beschaeftigt = false;
+  ja.addEventListener('click', async () => {
+    if (beschaeftigt) return;
+    beschaeftigt = true;
+    ja.disabled = true;
+    fehler.hidden = true;
+    try {
+      const einst = await einstellungenLaden();
+      const jetzt = Date.now();
+      const auswertungen = (einst.auswertungen ?? []).map((l) => (String(l.id) === String(lauf.id) ? { ...l, geloescht: jetzt } : l));
+      await einstellungenSpeichern({ ...einst, auswertungen });
+      kontext.sheet.schliessen();
+      location.hash = '#auswertung';
+    } catch (e) {
+      console.error(e);
+      fehler.textContent = LOESCHEN_FEHLER;
+      fehler.hidden = false;
+    } finally {
+      beschaeftigt = false;
+      ja.disabled = false;
+    }
+  });
+
+  const fuss = el('div', 'auswertung-fuss');
+  fuss.append(ja, nein);
+  huelle.append(frage, fehler, fuss);
+  kontext.sheet.oeffnen('Auswertung löschen', huelle, { ohneRueckfrage: true });
+}
+
+// Sheet „Aufräumen“: überflüssige Läufe weich löschen. Geprüft wird mit den frischen Daten, nicht mit dem Stand beim Öffnen.
+function aufraeumenOeffnen(kontext, ueberfluessig) {
+  const n = ueberfluessig.length;
+  const huelle = el('div', 'auswertung-form');
+  const frage = el('p', 'notiz', `${n} ${n === 1 ? 'Auswertung' : 'Auswertungen'} ohne Ergebnis löschen? Zu demselben Anlass gibt es schon eine eingelesene Auswertung.`);
+  const fehler = el('p', 'notiz fehler');
+  fehler.setAttribute('role', 'alert');
+  fehler.hidden = true;
+
+  const ja = el('button', 'knopf gefahr', 'Ja, löschen');
+  ja.type = 'button';
+  const nein = el('button', 'knopf', 'Nein, behalten');
+  nein.type = 'button';
+  nein.addEventListener('click', () => kontext.sheet.schliessen());
+
+  let beschaeftigt = false;
+  ja.addEventListener('click', async () => {
+    if (beschaeftigt) return;
+    beschaeftigt = true;
+    ja.disabled = true;
+    fehler.hidden = true;
+    try {
+      const einst = await einstellungenLaden();
+      const liste = einst.auswertungen ?? [];
+      const weg = new Set(ueberfluessigeLaeufe(liste).map((l) => String(l.id)));
+      if (weg.size) {
+        const jetzt = Date.now();
+        await einstellungenSpeichern({
+          ...einst,
+          auswertungen: liste.map((l) => (weg.has(String(l.id)) ? { ...l, geloescht: jetzt } : l)),
+        });
+      }
+      kontext.sheet.schliessen();
+    } catch (e) {
+      console.error(e);
+      fehler.textContent = LOESCHEN_FEHLER;
+      fehler.hidden = false;
+    } finally {
+      beschaeftigt = false;
+      ja.disabled = false;
+    }
+  });
+
+  const fuss = el('div', 'auswertung-fuss');
+  fuss.append(ja, nein);
+  huelle.append(frage, fehler, fuss);
+  kontext.sheet.oeffnen('Aufräumen', huelle, { ohneRueckfrage: true });
+}
+
+// Liste der Läufe, neueste oben. Gelöschte Läufe fehlen in Zählung, Liste und Suche.
 async function listeZeigen(ziel, kontext, auswertungen) {
+  const anzahl = auswertungen.filter(aktiv).length;
   const { linkZeile, kopf } = kopfBauen({ text: '‹ Kontakte', href: '#kontakte' }, 'Auswertungen', '');
+  kopf.querySelector('div').append(el('p', 'notiz zahl', anzahl
+    ? `${anzahl} ${anzahl === 1 ? 'Auswertung' : 'Auswertungen'}`
+    : 'Noch keine Auswertung'));
+
+  const nav = el('nav', 'aktionen');
+  nav.setAttribute('aria-label', 'Auswertungen');
+  // Aufräumen nur, wenn es überflüssige Läufe gibt
+  const ueberfluessig = ueberfluessigeLaeufe(auswertungen);
+  if (ueberfluessig.length) {
+    const aufraeumen = el('button', 'knopf', 'Aufräumen');
+    aufraeumen.type = 'button';
+    aufraeumen.addEventListener('click', () => aufraeumenOeffnen(kontext, ueberfluessig));
+    nav.append(aufraeumen);
+  }
   const neu = el('button', 'knopf haupt', 'Neue Auswertung');
   neu.type = 'button';
   neu.addEventListener('click', () => auswertungStarten(kontext));
-  kopf.querySelector('div').append(el('p', 'notiz zahl', auswertungen.length
-    ? `${auswertungen.length} ${auswertungen.length === 1 ? 'Auswertung' : 'Auswertungen'}`
-    : 'Noch keine Auswertung'));
-  const nav = el('nav', 'aktionen');
-  nav.setAttribute('aria-label', 'Auswertungen');
   nav.append(neu);
   kopf.append(nav);
 
   ziel.replaceChildren(linkZeile, kopf);
-  if (auswertungen.length === 0) {
+  if (anzahl === 0) {
     ziel.append(el('p', 'leer', 'Noch keine Auswertung. Starte sie über Kontakte, Auswertungen.'));
     return;
   }
-  const liste = el('ul', 'liste auswertung-liste');
-  liste.setAttribute('aria-label', 'Auswertungen');
-  for (const lauf of auswertungen) {
-    const li = el('li');
-    li.append(laufZeile(lauf));
-    liste.append(li);
+
+  // Suche und Sortierung über der Liste (dieselben Klassen wie bei den Kontakten)
+  const zeile = el('div', 'kontakte-sort-zeile');
+  const suchBox = el('div', 'kontakt-suche');
+  const suche = document.createElement('input');
+  suche.type = 'search';
+  suche.name = 'suche';
+  suche.placeholder = 'Suchen';
+  suche.autocomplete = 'off';
+  suche.setAttribute('aria-label', 'Auswertungen durchsuchen');
+  suchBox.append(suche);
+
+  const sortBox = el('div', 'kontakte-sort');
+  const sortName = el('label', 'kontakte-sort-name', 'Sortieren');
+  const sortWahl = document.createElement('select');
+  sortWahl.id = 'auswertung-sortierung-feld';
+  sortWahl.name = 'sortieren';
+  sortName.htmlFor = sortWahl.id;
+  for (const s of SORTIERUNGEN) sortWahl.append(new Option(s.text, s.wert));
+  sortWahl.value = sortierungLesen();
+  sortBox.append(sortName, sortWahl);
+  zeile.append(suchBox, sortBox);
+
+  // Bei Eingabe nur die Liste neu aufbauen, das Suchfeld behält den Fokus
+  const bereich = el('div', 'auswertung-liste-bereich');
+  function listeAufbauen() {
+    const treffer = laeufeFiltern(auswertungen, suche.value, sortWahl.value);
+    if (treffer.length === 0) {
+      bereich.replaceChildren(el('p', 'leer', 'Keine Auswertung gefunden.'));
+      return;
+    }
+    const liste = el('ul', 'liste auswertung-liste');
+    liste.setAttribute('aria-label', 'Auswertungen');
+    for (const lauf of treffer) {
+      const li = el('li');
+      li.append(laufZeile(lauf));
+      liste.append(li);
+    }
+    bereich.replaceChildren(liste);
   }
-  ziel.append(liste);
+  suche.addEventListener('input', listeAufbauen);
+  sortWahl.addEventListener('change', () => {
+    sortierungMerken(sortWahl.value);
+    listeAufbauen();
+  });
+
+  ziel.append(zeile, bereich);
+  listeAufbauen();
 }
 
 // Excel aus den Kontakten mit Ergebnis erstellen; danach Meldung mit Knopf „Ordner öffnen“
@@ -517,6 +811,18 @@ async function laufZeigen(ziel, kontext, lauf) {
     knoepfe.push(excelKnopf);
   }
 
+  // Umbenennen, neu auswerten und löschen: nach den vorhandenen Knöpfen
+  const umbenennenKnopf = el('button', 'knopf', 'Umbenennen');
+  umbenennenKnopf.type = 'button';
+  umbenennenKnopf.addEventListener('click', () => laufBearbeiten(lauf, kontext));
+  const neuAuswertenKnopf = el('button', 'knopf', 'Neu auswerten');
+  neuAuswertenKnopf.type = 'button';
+  neuAuswertenKnopf.addEventListener('click', () => auswertungStarten(kontext, { anlass: lauf.anlass, von: lauf.von, bis: lauf.bis }));
+  const loeschenKnopf = el('button', 'knopf gefahr', 'Löschen');
+  loeschenKnopf.type = 'button';
+  loeschenKnopf.addEventListener('click', () => laufLoeschenOeffnen(lauf, kontext));
+  knoepfe.push(umbenennenKnopf, neuAuswertenKnopf, loeschenKnopf);
+
   const zeitraum = zeitraumText(lauf);
   const { linkZeile, kopf } = kopfBauen(
     { text: '‹ Auswertungen', href: '#auswertung' },
@@ -548,7 +854,8 @@ export async function zeigen(ziel, kontext) {
 
   if (kontext?.parameter) {
     const id = String(kontext.parameter);
-    const lauf = auswertungen.find((l) => String(l.id) === id);
+    // Ein gelöschter Lauf gilt als „gibt es nicht (mehr)“
+    const lauf = auswertungen.find((l) => String(l.id) === id && !l.geloescht);
     if (!lauf) {
       const { linkZeile, kopf } = kopfBauen({ text: '‹ Auswertungen', href: '#auswertung' }, 'Auswertung', '');
       ziel.replaceChildren(linkZeile, kopf, el('p', 'leer', 'Diese Auswertung gibt es nicht (mehr).'));
@@ -558,6 +865,6 @@ export async function zeigen(ziel, kontext) {
     return;
   }
 
-  const sortiert = [...auswertungen].sort((a, b) => (b.erstellt ?? 0) - (a.erstellt ?? 0));
-  await listeZeigen(ziel, kontext, sortiert);
+  // Sortierung und Filter stehen in listeZeigen (laeufeFiltern)
+  await listeZeigen(ziel, kontext, auswertungen);
 }

@@ -1,7 +1,7 @@
 ﻿// Offline-Zwischenspeicher der Zeiterfassung.
 // Strategie: zuerst das Netz (Ã„nderungen kommen sofort an), bei Fehler der Zwischenspeicher (offline lÃ¤uft die App).
 // /api/ wird nie zwischengespeichert. Bei neuer VERSION werden alte Caches gelÃ¶scht.
-const VERSION = 'z37';
+const VERSION = 'z38';
 const CACHE = 'zeiterfassung-' + VERSION;
 const DATEIEN = [
   './',
@@ -30,6 +30,8 @@ const DATEIEN = [
   './js/reise_sheet.js',
   './js/vorschlaege.js',
   './js/ansicht_reisen.js',
+  './js/ansicht_papierkorb.js',
+  './js/ansicht_suche.js',
   './js/reisekosten_knopf.js',
   './vendor/opencv/opencv.js',
   './js/kantenerkennung.js',
@@ -64,6 +66,7 @@ const DATEIEN = [
   './vendor/pdf/pdf.min.js',
   './vendor/pdf/pdf.worker.min.js',
   './vorschlaege.css',
+  './suche.css',
 ];
 
 self.addEventListener('install', (ereignis) => {

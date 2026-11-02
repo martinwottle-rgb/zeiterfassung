@@ -161,8 +161,46 @@ export async function einstellungenSpeichern(e) {
 // Bilder (Visitenkarten, Notizen, Belege): Base64 im Eintrag, nie im Export.
 // Eintrag: {id, typ, daten (Base64), hochgeladen, geaendert}.
 
-// Speichert ein Bild und gibt seine id zurück. Startet den Abgleich (daten-geaendert).
-export async function bildSpeichern(blob) {
+// Fotos werden vor dem Speichern verkleinert: längere Seite höchstens BILD_PIXEL, JPEG. Spart Platz auf dem iPhone
+// und hält die Dateien unter 1 MB für den Abgleich. PDFs und schon kleine Bilder bleiben unverändert.
+const BILD_STUFEN = [{ pixel: 2000, qualitaet: 0.82 }, { pixel: 1600, qualitaet: 0.75 }];
+const BILD_KLEIN_GENUG = 600 * 1024;
+const BILD_ZIEL = 900 * 1024;
+
+export async function bildVerkleinern(blob) {
+  if (!blob?.type?.startsWith('image/') || typeof createImageBitmap !== 'function') return blob;
+  let bmp;
+  try {
+    bmp = await createImageBitmap(blob);
+  } catch {
+    return blob; // Format kann der Browser nicht lesen: Original behalten
+  }
+  try {
+    const lang = Math.max(bmp.width, bmp.height);
+    if (blob.size <= BILD_KLEIN_GENUG && lang <= BILD_STUFEN[0].pixel) return blob;
+    let ergebnis = blob;
+    for (const stufe of BILD_STUFEN) {
+      const f = Math.min(1, stufe.pixel / lang);
+      const c = document.createElement('canvas');
+      c.width = Math.round(bmp.width * f);
+      c.height = Math.round(bmp.height * f);
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(bmp, 0, 0, c.width, c.height);
+      const neu = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', stufe.qualitaet));
+      if (neu && neu.size < ergebnis.size) ergebnis = neu;
+      if (ergebnis.size <= BILD_ZIEL) break;
+    }
+    return ergebnis;
+  } finally {
+    bmp.close();
+  }
+}
+
+// Speichert ein Bild (vorher verkleinert, siehe bildVerkleinern) und gibt seine id zurück. Startet den Abgleich (daten-geaendert).
+export async function bildSpeichern(original) {
+  const blob = await bildVerkleinern(original);
   const id = crypto.randomUUID();
   const bytes = new Uint8Array(await blob.arrayBuffer());
   const t = await transaktion(['bilder'], 'readwrite');

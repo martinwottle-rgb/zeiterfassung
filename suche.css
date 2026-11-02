@@ -1,0 +1,34 @@
+/* Suche und Papierkorb: Abstände, Abschnittsüberschriften, Zeile mit Knopf rechts. Farben nur über vorhandene Variablen. */
+
+.suche-feld { margin-bottom: 8px; }
+
+.suche-ergebnis { margin-top: 4px; }
+
+.suche-abschnitt-kopf,
+.papierkorb-abschnitt {
+  margin: 22px 4px 8px;
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.suche-mehr { margin: 6px 4px 0; }
+
+.suche-zeile { align-items: center; }
+.suche-zeile .liste-text { flex: 1 1 auto; min-width: 0; }
+.suche-zeile .liste-unter { margin-top: 2px; }
+
+.papierkorb-zeile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.papierkorb-zeile .liste-text { flex: 1 1 auto; min-width: 0; }
+.papierkorb-zeile .liste-titel { overflow-wrap: anywhere; }
+.papierkorb-zeile .knopf { flex: 0 0 auto; }
+
+.papierkorb-status {
+  min-height: 1.3em;
+  margin: 8px 4px 0;
+  color: var(--text-2);
+}

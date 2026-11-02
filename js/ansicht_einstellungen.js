@@ -606,6 +606,11 @@ export async function zeigen(ziel, kontext) {
     }
   });
 
+  // Papierkorb: gelöschte Einträge der letzten 30 Tage, eigene Ansicht
+  const papierkorbLink = el('a', { klasse: 'liste-zeile', href: '#papierkorb' }, [
+    el('span', { klasse: 'liste-titel', text: 'Papierkorb' }),
+  ]);
+
   const dateiEingabe = el('input', { type: 'file', id: 'ein-datei', accept: 'application/json,.json', klasse: 'datei-eingabe' });
   const dateiZeile = el('div', { klasse: 'liste-zeile' }, [
     el('label', { klasse: 'liste-titel', for: 'ein-datei', text: 'Sicherung einlesen' }),
@@ -803,7 +808,7 @@ export async function zeigen(ziel, kontext) {
       el('p', { klasse: 'gruppe-fuss', text: 'Erinnert um 18 Uhr, wenn heute noch nichts eingetragen ist, und um 20 Uhr, wenn du noch eingestempelt bist.' }),
       erinnerungHinweis,
     ]),
-    gruppe('Daten', [exportKnopf, dateiZeile], [meldung]),
+    gruppe('Daten', [exportKnopf, papierkorbLink, dateiZeile], [meldung]),
   );
 
   if (merkeFokus && merkeFokus !== 'ansicht') {

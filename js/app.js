@@ -1,12 +1,12 @@
 // Start, Darstellung, Hash-Navigation, Sheet-Hilfe und Neuzeichnen der Ansichten.
-import { alle, einstellungenLaden, einstellungenSpeichern, exportieren } from './speicher.js';
+import { alle, bildLaden, einstellungenLaden, einstellungenSpeichern, exportieren } from './speicher.js';
 import * as speicher from './speicher.js'; // bildLaden kommt aus speicher.js, wird zur Laufzeit geprüft (typeof)
 import { heute, jetztMinuten } from './zeit.js';
 import { mitternachtPruefen } from './stempeln.js';
 import { abgleichen, bildHolen, einrichtungLaden } from './abgleich.js';
 import { abwesenheitAm, sollMinuten, stempelZustand } from './rechnen.js';
 
-const ANSICHTEN = ['heute', 'woche', 'monat', 'abwesenheiten', 'reisen', 'belege', 'kontakte', 'auswertung', 'einstellungen'];
+const ANSICHTEN = ['heute', 'woche', 'monat', 'abwesenheiten', 'reisen', 'belege', 'kontakte', 'auswertung', 'einstellungen', 'papierkorb', 'suche'];
 const ansicht = document.getElementById('ansicht');
 const rahmen = document.querySelector('.rahmen');
 const hintergrund = document.getElementById('sheet-hintergrund');
@@ -30,7 +30,7 @@ function ausHash() {
 }
 
 // Monat und Abwesenheiten gehören zum Reiter „Zeit“ (woche). Einstellungen hat ein eigenes Zahnrad.
-const REITER_VON = { monat: 'woche', abwesenheiten: 'woche', auswertung: 'kontakte' };
+const REITER_VON = { monat: 'woche', abwesenheiten: 'woche', auswertung: 'kontakte', papierkorb: 'einstellungen' };
 
 function navAktualisieren(name) {
   const reiter = REITER_VON[name] ?? name;
@@ -558,8 +558,32 @@ async function laptopSicherung() {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(daten),
     });
     if (!antwort.ok) console.error('Sicherung fehlgeschlagen', antwort.status);
+    await fotosSichern(daten);
   } catch {
     // Netzfehler: beim nächsten Durchlauf wieder versuchen
+  }
+}
+
+// Fotos der Kontakte und Belege zusätzlich als Dateien sichern (sicherungen/bilder). Nur fehlende werden geschickt;
+// Fotos, die nur auf GitHub liegen (vom iPhone), holt bildHolen dafür einmal auf den Laptop.
+async function fotosSichern(daten) {
+  const da = new Set((await (await fetch('/api/sicherung-bilder', { cache: 'no-store' })).json()).ids ?? []);
+  const ids = new Set();
+  for (const k of daten.kontakte ?? []) {
+    if (k.geloescht) continue;
+    for (const id of [k.bildKarte, k.bildRueckseite, k.bildNotiz]) if (id) ids.add(String(id));
+  }
+  for (const b of daten.belege ?? []) if (!b.geloescht) for (const id of b.bilder ?? []) if (id) ids.add(String(id));
+  const einrichtung = einrichtungLaden();
+  for (const id of ids) {
+    if (da.has(id)) continue;
+    try {
+      const blob = (await bildLaden(id)) ?? (einrichtungVollstaendig(einrichtung) ? await bildHolen(id, einrichtung) : null);
+      if (!blob) continue;
+      await fetch(`/api/sicherung-bild?id=${encodeURIComponent(id)}&typ=${encodeURIComponent(blob.type)}`, { method: 'POST', body: blob });
+    } catch (e) {
+      console.warn('Foto nicht gesichert', id, e?.message); // beim nächsten Durchlauf wieder
+    }
   }
 }
 

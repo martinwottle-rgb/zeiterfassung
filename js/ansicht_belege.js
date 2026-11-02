@@ -50,6 +50,59 @@ function filterMerken(wert) {
   try { localStorage.setItem(FILTER_MERKEN, wert); } catch { /* nicht merkbar: egal */ }
 }
 
+const SORTIERUNG = [
+  { wert: 'neu', text: 'Neueste zuerst' },
+  { wert: 'alt', text: 'Älteste zuerst' },
+  { wert: 'betrag', text: 'Betrag absteigend' },
+];
+const SORTIERUNG_MERKEN = 'belege-sortierung';
+
+// Gemerkte Sortierung lesen, sonst „Neueste zuerst“
+function sortierungLesen() {
+  try {
+    const wert = localStorage.getItem(SORTIERUNG_MERKEN);
+    if (SORTIERUNG.some((s) => s.wert === wert)) return wert;
+  } catch { /* Speicher nicht verfügbar: Vorgabe */ }
+  return 'neu';
+}
+
+function sortierungMerken(wert) {
+  try { localStorage.setItem(SORTIERUNG_MERKEN, wert); } catch { /* nicht merkbar: egal */ }
+}
+
+// Texte, in denen gesucht wird: Händler, Beschreibung, Kategorie, Datum TT.MM.JJJJ und Betrag mit Punkt und Komma
+function suchtexte(b) {
+  const texte = [b.haendler, b.beschreibung, b.kategorie, datumAnzeige(b.datum)].map(txt);
+  if (Number.isFinite(b.betrag)) {
+    const punkt = b.betrag.toFixed(2);
+    texte.push(punkt, punkt.replace('.', ','));
+  }
+  return texte;
+}
+
+// Reine Filterfunktion: Suche, Zahlung und Kategorie. Ohne Segment-Filter und ohne Sortierung.
+export function belegeFiltern(belege, { suche = '', zahlung = '', kategorie = '' } = {}) {
+  const s = txt(suche).toLowerCase();
+  return (belege ?? []).filter((b) => {
+    if (!b) return false;
+    if (zahlung === 'karte' && !istKarte(b)) return false;
+    if (zahlung === 'bar' && istKarte(b)) return false;
+    if (kategorie && txt(b.kategorie) !== kategorie) return false;
+    if (!s) return true;
+    return suchtexte(b).some((t) => t.toLowerCase().includes(s));
+  });
+}
+
+// Euro-Beträge absteigend, Belege ohne Euro-Betrag ans Ende
+function betragAbsteigend(a, b) {
+  const ea = euroBetrag(a);
+  const eb = euroBetrag(b);
+  if (ea === null && eb === null) return 0;
+  if (ea === null) return 1;
+  if (eb === null) return -1;
+  return eb - ea;
+}
+
 const txt = (s) => String(s ?? '').trim();
 
 function el(tag, klasse, inhalt) {
@@ -262,6 +315,12 @@ export async function zeigen(ziel, kontext) {
   const [roh, reisen] = await Promise.all([alle('belege'), alle('reisen')]);
   let belege = roh.filter((b) => b && !b.geloescht);
   let filter = filterLesen();
+  let suchText = '';
+  let zahlungWahl = '';
+  let kategorieWahl = '';
+  let sortierung = sortierungLesen();
+  // Alle Belege je Monat im gewählten Segment (ohne Suche, Zahlung, Kategorie), für die PDF-Knöpfe
+  let volleMonate = new Map();
   let auswahlModus = false;
   let banner = null;
   const gewaehlt = new Set();
@@ -278,6 +337,29 @@ export async function zeigen(ziel, kontext) {
       </nav>
     </header>
     <div class="segment belege-segment" role="group" aria-label="Welche Belege zeigen" data-segment></div>
+    <div class="kontakte-sort-zeile">
+      <div class="kontakt-suche">
+        <input type="search" name="suche" placeholder="Suchen" aria-label="Belege durchsuchen" autocomplete="off" enterkeyhint="search" data-suche>
+      </div>
+      <div class="kontakte-sort">
+        <label class="kontakte-sort-name" for="belege-zahlung-feld">Zahlung</label>
+        <select id="belege-zahlung-feld" name="zahlung">
+          <option value="">Alle Zahlungen</option>
+          <option value="karte">Karte</option>
+          <option value="bar">Bar / privat</option>
+        </select>
+      </div>
+      <div class="kontakte-sort">
+        <label class="kontakte-sort-name" for="belege-kategorie-feld">Kategorie</label>
+        <select id="belege-kategorie-feld" name="kategorie">
+          <option value="">Alle Kategorien</option>
+        </select>
+      </div>
+      <div class="kontakte-sort">
+        <label class="kontakte-sort-name" for="belege-sortierung-feld">Sortieren</label>
+        <select id="belege-sortierung-feld" name="sortierung">${SORTIERUNG.map((s) => `<option value="${s.wert}">${s.text}</option>`).join('')}</select>
+      </div>
+    </div>
     <div class="belege-banner" data-banner hidden></div>
     <p class="belege-meldung" role="status" data-meldung hidden></p>
     <div data-liste></div>
@@ -296,6 +378,14 @@ export async function zeigen(ziel, kontext) {
   const leiste = ziel.querySelector('[data-leiste]');
   const leistePdf = ziel.querySelector('[data-leiste-pdf]');
   const leisteMarkieren = ziel.querySelector('[data-leiste-markieren]');
+  const suchFeld = ziel.querySelector('[data-suche]');
+  const zahlungFeld = ziel.querySelector('#belege-zahlung-feld');
+  const kategorieFeld = ziel.querySelector('#belege-kategorie-feld');
+  const sortFeld = ziel.querySelector('#belege-sortierung-feld');
+  // Kategorien, die in den Belegen tatsächlich vorkommen
+  const kategorien = [...new Set(belege.map((b) => txt(b.kategorie)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
+  for (const k of kategorien) kategorieFeld.append(new Option(k, k));
+  sortFeld.value = sortierung;
 
   // Gemeinsamer Kontext für die Hilfsfunktionen oben (Zeile, Ausgabe)
   const ctx = {
@@ -307,9 +397,13 @@ export async function zeigen(ziel, kontext) {
     meldungZeigen: (...a) => meldungZeigen(...a),
   };
 
-  const sichtbar = () => belege.filter((b) => (
+  // Segment Offen, Abgegeben, Alle
+  const segmentBelege = () => belege.filter((b) => (
     filter === 'alle' || (filter === 'abgegeben') === (b.status === 'abgegeben')
   ));
+  const sucheAktiv = () => Boolean(txt(suchText) || zahlungWahl || kategorieWahl);
+  // Sichtbar sind die Belege im Segment, die zu Suche, Zahlung und Kategorie passen
+  const sichtbar = () => belegeFiltern(segmentBelege(), { suche: suchText, zahlung: zahlungWahl, kategorie: kategorieWahl });
   const gewaehltListe = () => sichtbar().filter((b) => gewaehlt.has(b.id));
 
   function leerText(t) {
@@ -417,9 +511,12 @@ export async function zeigen(ziel, kontext) {
     render();
   }
 
+  // Alle Belege des Monats im Segment, auch die gerade ausgeblendeten (Suche, Zahlung, Kategorie)
+  const ganzerMonat = (g) => volleMonate.get(g.monat)?.belege ?? g.belege;
+
   // PDF nur mit den Kartenbelegen des Monats
   function gruppePdf(g, knopf) {
-    const karten = g.belege.filter((b) => istKarte(b));
+    const karten = ganzerMonat(g).filter((b) => istKarte(b));
     const name = g.monat ? `Belege Kreditkarte ${g.titel}.pdf` : 'Belege Kreditkarte ohne Datum.pdf';
     return ausgabeAbschliessen(karten, name, knopf);
   }
@@ -445,7 +542,7 @@ export async function zeigen(ziel, kontext) {
     }
     const pdf = el('button', 'belege-pdf', 'PDF Karte');
     pdf.type = 'button';
-    pdf.disabled = karten.length === 0;
+    pdf.disabled = ganzerMonat(g).filter((b) => istKarte(b)).length === 0;
     pdf.setAttribute('aria-label', `PDF Kreditkarte für ${g.monat ? g.titel : 'Belege ohne Datum'}`);
     pdf.addEventListener('click', () => gruppePdf(g, pdf));
     rechts.append(pdf);
@@ -463,10 +560,23 @@ export async function zeigen(ziel, kontext) {
 
   // Fußleiste des Auswahlmodus: Zähler und Schaltflächen, deaktiviert bei 0 gewählt
   function leisteZeichnen() {
-    const n = gewaehlt.size;
+    const n = gewaehltListe().length;
     leistePdf.textContent = `PDF (${n})`;
     leistePdf.disabled = n === 0;
     leisteMarkieren.disabled = n === 0;
+  }
+
+  // Monatsgruppen und Zeilen in der gewählten Sortierung. „Älteste zuerst“ dreht die Reihenfolge um,
+  // „Betrag absteigend“ lässt die Monate und sortiert nur die Zeilen darin nach Euro-Betrag.
+  function sortierteGruppen(liste2) {
+    const gruppen = nachMonat(liste2);
+    if (sortierung === 'alt') {
+      gruppen.reverse();
+      for (const g of gruppen) g.belege.reverse();
+    } else if (sortierung === 'betrag') {
+      for (const g of gruppen) g.belege.sort(betragAbsteigend);
+    }
+    return gruppen;
   }
 
   function klebeOffset() {
@@ -493,10 +603,11 @@ export async function zeigen(ziel, kontext) {
     if (belege.length === 0) {
       liste.append(leerText('Noch keine Belege. Scanne einen Kassenzettel oder eine Rechnung.'));
     } else if (zeigbar.length === 0) {
-      liste.append(leerText(LEER_TEXT[filter]));
+      liste.append(leerText(sucheAktiv() ? 'Keine Belege gefunden.' : LEER_TEXT[filter]));
     } else {
       const paare = [];
-      for (const g of nachMonat(zeigbar)) liste.append(gruppeBauen(g, paare));
+      volleMonate = new Map(nachMonat(segmentBelege()).map((g) => [g.monat, g]));
+      for (const g of sortierteGruppen(zeigbar)) liste.append(gruppeBauen(g, paare));
       minisNachladen(paare, zugNr);
     }
 
@@ -521,6 +632,25 @@ export async function zeigen(ziel, kontext) {
   });
   leisteMarkieren.addEventListener('click', () => {
     markieren(gewaehltListe().filter((b) => b.status !== 'abgegeben'));
+  });
+
+  // Suche und Auswahlen zeichnen nur die Liste neu, das Suchfeld behält Fokus und Wert
+  suchFeld.addEventListener('input', () => {
+    suchText = suchFeld.value;
+    render();
+  });
+  zahlungFeld.addEventListener('change', () => {
+    zahlungWahl = zahlungFeld.value;
+    render();
+  });
+  kategorieFeld.addEventListener('change', () => {
+    kategorieWahl = kategorieFeld.value;
+    render();
+  });
+  sortFeld.addEventListener('change', () => {
+    sortierung = sortFeld.value;
+    sortierungMerken(sortierung);
+    render();
   });
 
   render();

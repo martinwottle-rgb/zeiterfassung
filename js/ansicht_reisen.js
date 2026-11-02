@@ -84,6 +84,17 @@ function monatAbschnitt(key, gruppen, reise, laptop, nr) {
     `</section>`;
 }
 
+// Suche und Land: Gruppen, deren Anlass, Land oder ein Reisetag passt. Land als angezeigter Name, '' = alle.
+export function reisenFiltern(gruppen, { suche = '', land = '' } = {}) {
+  const s = String(suche ?? '').trim().toLowerCase();
+  return (gruppen ?? []).filter((g) => {
+    if (land && landAnzeige(g.land) !== land) return false;
+    if (!s) return true;
+    const texte = [g.anlass, g.land, ...(g.tage ?? []).flatMap((t) => [t.anlass, t.land])];
+    return texte.some((t) => String(t ?? '').toLowerCase().includes(s));
+  });
+}
+
 export async function zeigen(ziel, kontext) {
   const heuteText = kontext.heute;
   const jahr = jahrParameter(kontext.parameter, heuteText);
@@ -91,27 +102,11 @@ export async function zeigen(ziel, kontext) {
 
   // Reisen des Jahres nach Monat ihres Beginns; reisenGruppieren liefert aufsteigend nach von
   const gruppen = reisenGruppieren(alleReisen).filter((g) => g.von.startsWith(`${jahr}-`));
-  const nachMonat = new Map();
-  for (const g of gruppen) {
-    const key = g.von.slice(0, 7);
-    if (!nachMonat.has(key)) nachMonat.set(key, []);
-    nachMonat.get(key).push(g);
-  }
-  // Neueste Monate oben, innerhalb des Monats ebenfalls neueste zuerst
-  const monatKeys = [...nachMonat.keys()].sort().reverse();
-
+  // Länder des Jahres für die Auswahl
+  const laender = [...new Set(gruppen.map((g) => landAnzeige(g.land)).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'de'));
   const laptop = kontext.laptop === true;
-  const nr = { wert: 0 };
-  const karteListe = [];
-  const reiseJeMonat = new Map();
-  let abschnitte = '';
-  for (const key of monatKeys) {
-    const reihe = nachMonat.get(key).slice().reverse();
-    const [j, m] = key.split('-').map(Number);
-    reiseJeMonat.set(key, reisekostenMonat(alleReisen, j, m));
-    for (const g of reihe) karteListe.push(g);
-    abschnitte += monatAbschnitt(key, reihe, reiseJeMonat.get(key), laptop, nr);
-  }
+  let suchText = '';
+  let landWahl = '';
 
   const dieserJahr = jahr === Number(heuteText.slice(0, 4));
   ziel.innerHTML = `
@@ -127,27 +122,82 @@ export async function zeigen(ziel, kontext) {
         <button type="button" class="knopf knopf-haupt" data-reise-neu>Reise hinzufügen</button>
       </nav>
     </header>
-    ${gruppen.length === 0
-      ? `<p class="leer">Noch keine Dienstreisen in ${jahr}.</p>`
-      : abschnitte}
+    <div class="kontakte-sort-zeile">
+      <div class="kontakt-suche">
+        <input type="search" name="suche" placeholder="Suchen" aria-label="Reisen durchsuchen" autocomplete="off" enterkeyhint="search" data-suche>
+      </div>
+      <div class="kontakte-sort">
+        <label class="kontakte-sort-name" for="reisen-land-feld">Land</label>
+        <select id="reisen-land-feld" name="land">
+          <option value="">Alle Länder</option>
+        </select>
+      </div>
+    </div>
+    <div data-liste></div>
   `;
 
-  // Karten öffnen die Reise zum Bearbeiten
-  ziel.querySelectorAll('[data-nr]').forEach((karte) => {
-    karte.addEventListener('click', () => {
-      const g = karteListe[Number(karte.dataset.nr)];
-      reiseOeffnen({ tage: g.tage }, kontext).catch((e) => console.error(e));
+  const liste = ziel.querySelector('[data-liste]');
+  const suche = ziel.querySelector('[data-suche]');
+  const landFeld = ziel.querySelector('#reisen-land-feld');
+  for (const l of laender) landFeld.append(new Option(l, l));
+
+  // Liste neu aufbauen: Monate ohne Treffer entfallen. Nur die Liste wird ersetzt, das Suchfeld behält Fokus und Wert.
+  function listeZeichnen() {
+    const treffer = reisenFiltern(gruppen, { suche: suchText, land: landWahl });
+    const nachMonat = new Map();
+    for (const g of treffer) {
+      const key = g.von.slice(0, 7);
+      if (!nachMonat.has(key)) nachMonat.set(key, []);
+      nachMonat.get(key).push(g);
+    }
+    // Neueste Monate oben, innerhalb des Monats ebenfalls neueste zuerst
+    const monatKeys = [...nachMonat.keys()].sort().reverse();
+
+    const nr = { wert: 0 };
+    const karteListe = [];
+    const reiseJeMonat = new Map();
+    let abschnitte = '';
+    for (const key of monatKeys) {
+      const reihe = nachMonat.get(key).slice().reverse();
+      const [j, m] = key.split('-').map(Number);
+      // Monatssumme und Excel-Tabelle immer über alle Reisen des Monats
+      reiseJeMonat.set(key, reisekostenMonat(alleReisen, j, m));
+      for (const g of reihe) karteListe.push(g);
+      abschnitte += monatAbschnitt(key, reihe, reiseJeMonat.get(key), laptop, nr);
+    }
+
+    if (gruppen.length === 0) liste.innerHTML = `<p class="leer">Noch keine Dienstreisen in ${jahr}.</p>`;
+    else if (treffer.length === 0) liste.innerHTML = '<p class="leer">Keine Reise gefunden.</p>';
+    else liste.innerHTML = abschnitte;
+
+    // Karten öffnen die Reise zum Bearbeiten
+    liste.querySelectorAll('[data-nr]').forEach((karte) => {
+      karte.addEventListener('click', () => {
+        const g = karteListe[Number(karte.dataset.nr)];
+        reiseOeffnen({ tage: g.tage }, kontext).catch((e) => console.error(e));
+      });
     });
+
+    if (laptop) {
+      liste.querySelectorAll('.reisen-monat').forEach((box) => {
+        const key = box.dataset.monat;
+        reisekostenKnopfVerdrahten(box, reiseJeMonat.get(key), key);
+      });
+    }
+  }
+
+  suche.addEventListener('input', () => {
+    suchText = suche.value;
+    listeZeichnen();
+  });
+  landFeld.addEventListener('change', () => {
+    landWahl = landFeld.value;
+    listeZeichnen();
   });
 
   ziel.querySelector('[data-reise-neu]').addEventListener('click', () => {
     reiseOeffnen({}, kontext).catch((e) => console.error(e));
   });
 
-  if (laptop) {
-    ziel.querySelectorAll('.reisen-monat').forEach((box) => {
-      const key = box.dataset.monat;
-      reisekostenKnopfVerdrahten(box, reiseJeMonat.get(key), key);
-    });
-  }
+  listeZeichnen();
 }

@@ -135,8 +135,10 @@ function paketAnzeigen(lauf, kontext) {
   kontext.sheet.oeffnen('Messe auswerten', huelle, { ohneRueckfrage: true });
 }
 
-// Startet das Sheet „Messe auswerten“
-export async function auswertungStarten(kontext) {
+// Startet das Sheet „Messe auswerten“. vorgabe (optional): { anlass, von, bis } aus einem bestehenden Lauf.
+// Mit von und bis startet das Formular im Modus Zeitraum mit diesen Daten.
+export async function auswertungStarten(kontext, vorgabe = {}) {
+  const mitVorgabe = Boolean(vorgabe?.von && vorgabe?.bis);
   const heute = kontext.heute || datumText(new Date());
   let gruppen = [];
   let kontakte = [];
@@ -155,7 +157,7 @@ export async function auswertungStarten(kontext) {
   // Häkchen je Kontakt (Schlüssel: Id). Anfangszustand: auswertbar
   const haken = new Map(kontakte.map((k) => [String(k.id), Boolean(lead.auswertbar(k))]));
 
-  let modus = gruppen.length ? 'reise' : 'zeitraum';
+  let modus = mitVorgabe || !gruppen.length ? 'zeitraum' : 'reise';
   let beschaeftigt = false;
   const form = el('form', 'auswertung-form');
   form.noValidate = true;
@@ -184,12 +186,12 @@ export async function auswertungStarten(kontext) {
   vonEingabe.type = 'date';
   vonEingabe.id = 'auswertung-von';
   vonEingabe.name = 'von';
-  vonEingabe.value = addTage(heute, -6);
+  vonEingabe.value = mitVorgabe ? String(vorgabe.von) : addTage(heute, -6);
   const bisEingabe = document.createElement('input');
   bisEingabe.type = 'date';
   bisEingabe.id = 'auswertung-bis';
   bisEingabe.name = 'bis';
-  bisEingabe.value = heute;
+  bisEingabe.value = mitVorgabe ? String(vorgabe.bis) : heute;
   const zeitPanel = el('div', 'auswertung-panel auswertung-zeitraum');
   zeitPanel.append(feld('Von', vonEingabe), feld('Bis', bisEingabe));
 
@@ -200,7 +202,8 @@ export async function auswertungStarten(kontext) {
   anlassEingabe.name = 'anlass';
   anlassEingabe.autocomplete = 'off';
   anlassEingabe.placeholder = 'Messe, Kundenbesuch …';
-  if (gruppen.length && modus === 'reise') anlassEingabe.value = gruppen[0].anlass || '';
+  if (mitVorgabe) anlassEingabe.value = String(vorgabe.anlass ?? '');
+  else if (gruppen.length && modus === 'reise') anlassEingabe.value = gruppen[0].anlass || '';
 
   // Schalter: nur Kontakte mit Lead-Daten
   const nurLead = document.createElement('input');
