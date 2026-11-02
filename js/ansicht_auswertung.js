@@ -81,8 +81,24 @@ function zeitpunktText(ms) {
   return `${z(d.getDate())}.${z(d.getMonth() + 1)}. um ${z(d.getHours())}:${z(d.getMinutes())}`;
 }
 
+// In Bearbeitung: Bearbeitungszeitpunkt gesetzt oder noch der ältere Entwurf
+const inBearbeitung = (k) => Boolean(k.auswertung?.bearbeitet || k.auswertung?.entwurf);
+
+// Setzt bearbeitet auf jetzt, überschreibt aber keinen vorhandenen Zeitpunkt
+const bearbeitetSetzen = (alt) => (alt.bearbeitet ? {} : { bearbeitet: Date.now() });
+
+// Speichert den Bearbeitungsstand am frischen Kontakt (wie beim Entwurf), damit keine Änderungen verloren gehen.
+// aenderung(alt) liefert die Felder, die gesetzt werden sollen.
+async function auswertungSpeichern(k, aenderung) {
+  const frisch = (await alle('kontakte')).find((x) => String(x.id) === String(k.id)) ?? k;
+  const alt = frisch.auswertung ?? {};
+  const neu = { ...alt, ...aenderung(alt) };
+  await speichern('kontakte', { ...frisch, auswertung: neu });
+  k.auswertung = neu;
+}
+
 // Am Laptop: Knopf „Als Entwurf in Outlook“ mit Meldung und Stand des letzten Entwurfs
-function outlookBlock(k, mail) {
+function outlookBlock(k, mail, bearbeitung) {
   const block = el('div', 'auswertung-outlook');
   const status = el('p', 'notiz auswertung-entwurf-status');
   const meldung = el('p', 'auswertung-meldung');
@@ -100,6 +116,7 @@ function outlookBlock(k, mail) {
     }
   };
   stand(k.auswertung?.entwurf);
+  block.aktualisieren = () => stand(k.auswertung?.entwurf);
 
   knopf.addEventListener('click', async () => {
     knopf.disabled = true;
@@ -114,11 +131,10 @@ function outlookBlock(k, mail) {
       const daten = await antwort.json();
       meldung.textContent = daten?.meldung || (daten?.ok ? 'Entwurf angelegt.' : 'Entwurf konnte nicht angelegt werden.');
       if (daten?.ok) {
-        // Frischen Stand holen, damit keine Änderungen verloren gehen
-        const frisch = (await alle('kontakte')).find((x) => String(x.id) === String(k.id)) ?? k;
+        // Entwurf merken, dazu den Bearbeitungsbeginn, falls noch keiner gesetzt ist
         const jetzt = Date.now();
-        await speichern('kontakte', { ...frisch, auswertung: { ...frisch.auswertung, entwurf: jetzt } });
-        k.auswertung = { ...(k.auswertung ?? {}), entwurf: jetzt };
+        await auswertungSpeichern(k, (alt) => ({ entwurf: jetzt, ...(alt.bearbeitet ? {} : { bearbeitet: jetzt }) }));
+        bearbeitung.aktualisieren();
       }
     } catch (e) {
       console.warn('Outlook-Entwurf nicht angelegt', e?.message);
@@ -130,6 +146,42 @@ function outlookBlock(k, mail) {
   });
 
   block.append(knopf, status, meldung);
+  return block;
+}
+
+// Schalter „Als in Bearbeitung markieren“ bzw. „Wieder auf offen setzen“, darunter der Stand.
+// nachAenderung zeigt die übrigen Teile des Sheets (Outlook-Block) neu an.
+function bearbeitungBlock(k, nachAenderung) {
+  const block = el('div', 'auswertung-bearbeitung');
+  const knopf = el('button', 'knopf');
+  knopf.type = 'button';
+  const status = el('p', 'notiz auswertung-bearbeitung-status');
+
+  const stand = () => {
+    knopf.textContent = inBearbeitung(k) ? 'Wieder auf offen setzen' : 'Als in Bearbeitung markieren';
+    status.textContent = k.auswertung?.bearbeitet ? `In Bearbeitung seit ${zeitpunktText(k.auswertung.bearbeitet)}` : '';
+  };
+  block.aktualisieren = stand;
+  stand();
+
+  knopf.addEventListener('click', async () => {
+    knopf.disabled = true;
+    try {
+      if (inBearbeitung(k)) {
+        await auswertungSpeichern(k, () => ({ bearbeitet: null, entwurf: null }));
+      } else {
+        await auswertungSpeichern(k, bearbeitetSetzen);
+      }
+      nachAenderung?.();
+    } catch (e) {
+      console.warn('Bearbeitungsstand nicht gespeichert', e?.message);
+    } finally {
+      knopf.disabled = false;
+      stand();
+    }
+  });
+
+  block.append(knopf, status);
   return block;
 }
 
@@ -152,6 +204,14 @@ async function detailOeffnen(k, kontext) {
   const a = k.auswertung ?? {};
   const huelle = el('div', 'auswertung-detail');
   const name = kontaktName(k);
+
+  // Outlook-Block und Schalter zeigen den Stand neu, wenn sich der Bearbeitungsstand ändert
+  let outlook = null;
+  const bearbeitung = bearbeitungBlock(k, () => outlook?.aktualisieren?.());
+  // Mail kopiert oder geöffnet: Bearbeitung merken, der Schalter zeigt es sofort
+  const merken = () => auswertungSpeichern(k, bearbeitetSetzen)
+    .then(() => bearbeitung.aktualisieren())
+    .catch((e) => console.warn('Bearbeitung nicht gemerkt', e?.message));
 
   huelle.append(el('p', 'auswertung-detail-name', name));
   if (text(k.firma)) huelle.append(el('p', 'notiz', text(k.firma)));
@@ -198,16 +258,24 @@ async function detailOeffnen(k, kontext) {
     kopierKnopf.addEventListener('click', async () => {
       const ok = await textKopieren([mail.betreff, '', ohneSterne(mail.text)].join('\n'));
       kopierKnopf.textContent = ok ? 'Kopiert' : 'Kopieren hat nicht geklappt';
+      if (ok) merken();
     });
     aktionen.append(kopierKnopf);
     if (text(k.email)) {
       const mailLink = el('a', 'knopf', 'In Mail öffnen');
       mailLink.href = `mailto:${k.email}?subject=${encodeURIComponent(mail.betreff ?? '')}&body=${encodeURIComponent(ohneSterne(mail.text))}`;
+      mailLink.addEventListener('click', merken);
       aktionen.append(mailLink);
     }
     huelle.append(aktionen);
-    if (kontext?.laptop === true) huelle.append(outlookBlock(k, mail));
+    if (kontext?.laptop === true) {
+      outlook = outlookBlock(k, mail, bearbeitung);
+      huelle.append(outlook);
+    }
   }
+
+  // Schalter nur bei vorhandenem Ergebnis, sonst wäre der Kontakt ohne Ergebnis als bearbeitet einsortiert
+  if (k.auswertung) huelle.append(bearbeitung);
 
   kontext.sheet.oeffnen(name, huelle, { ohneRueckfrage: true });
 
@@ -235,6 +303,7 @@ function kontaktZeile(k, kontext) {
   const li = el('li');
   const zeile = el('button', 'liste-zeile auswertung-zeile');
   zeile.type = 'button';
+  if (inBearbeitung(k)) zeile.classList.add('auswertung-zeile-bearbeitet');
   zeile.addEventListener('click', () => detailOeffnen(k, kontext));
 
   const block = el('span', 'liste-text');
@@ -245,7 +314,8 @@ function kontaktZeile(k, kontext) {
     if (!text(k.lead?.prioritaet) && text(a?.prioritaet)) kopf.append(el('span', 'auswertung-vorschlag', 'Vorschlag'));
   }
   if (a?.entwurf) kopf.append(el('span', 'auswertung-entwurf', 'Entwurf'));
-  if (p || a?.entwurf) block.append(kopf);
+  else if (a?.bearbeitet) kopf.append(el('span', 'auswertung-entwurf', 'in Bearbeitung'));
+  if (p || a?.entwurf || a?.bearbeitet) block.append(kopf);
   block.append(el('span', 'liste-titel', text(k.firma) || kontaktName(k)));
   const unter = [];
   if (text(k.firma)) unter.push(kontaktName(k));
@@ -387,6 +457,28 @@ async function excelErstellen(lauf, kontakte, knopf, meldung) {
   }
 }
 
+let abschnittFolge = 0;
+
+// Abschnitt mit klebender Überschrift „Titel (N)“ und den Zeilen; die Liste ist per aria-labelledby benannt
+function abschnittBauen(titel, zeilen, kontext) {
+  abschnittFolge += 1;
+  const id = `auswertung-liste-kopf-${abschnittFolge}`;
+  const box = el('div', 'auswertung-liste-abschnitt');
+  const kopf = el('h2', 'auswertung-liste-kopf', `${titel} (${zeilen.length})`);
+  kopf.id = id;
+  const ul = el('ul', 'liste auswertung-liste');
+  ul.setAttribute('aria-labelledby', id);
+  for (const k of zeilen) ul.append(kontaktZeile(k, kontext));
+  box.append(kopf, ul);
+  return box;
+}
+
+// Die klebenden Abschnittsköpfe sitzen direkt unter dem Kopf der Seite
+function klebeOffenSetzen(ziel, kopf) {
+  const oben = parseFloat(getComputedStyle(kopf).top) || 0;
+  ziel.style.setProperty('--auswertung-oben', `${oben + kopf.offsetHeight + 8}px`);
+}
+
 // Prioritätenliste eines Laufs
 async function laufZeigen(ziel, kontext, lauf) {
   const alleKontakte = (await alle('kontakte')).filter((k) => !k.geloescht);
@@ -442,10 +534,13 @@ async function laufZeigen(ziel, kontext, lauf) {
     ziel.append(el('p', 'leer', 'Zu dieser Auswertung gibt es keine Kontakte mehr.'));
     return;
   }
-  const liste = el('ul', 'liste auswertung-liste');
-  liste.setAttribute('aria-label', 'Prioritätenliste');
-  for (const k of kontakte) liste.append(kontaktZeile(k, kontext));
-  ziel.append(liste);
+  // Zwei Abschnitte: offen oben, in Bearbeitung darunter. Innen bleibt die Punktzahl-Reihenfolge.
+  // Leere Abschnitte entfallen. Die Excel-Datei nimmt weiter alle Kontakte in ihrer Reihenfolge.
+  const offen = kontakte.filter((k) => !inBearbeitung(k));
+  const laufend = kontakte.filter((k) => inBearbeitung(k));
+  if (offen.length) ziel.append(abschnittBauen('Offen', offen, kontext));
+  if (laufend.length) ziel.append(abschnittBauen('In Bearbeitung', laufend, kontext));
+  klebeOffenSetzen(ziel, kopf);
 }
 
 export async function zeigen(ziel, kontext) {
