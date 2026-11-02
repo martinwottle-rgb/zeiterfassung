@@ -70,18 +70,32 @@ function canvasAlsBlob(c, typ, qualitaet) {
   });
 }
 
-// Bild (z. B. webp, heic) über ein Canvas als JPEG; transparente Bereiche werden weiß
-async function alsJpeg(blob) {
-  const bmp = await createImageBitmap(blob);
+// Verkleinerung für die Ausgabe: längere Bildseite in Pixel und JPEG-Qualität. 1600 px auf A4 sind gut 190 dpi,
+// Kassenbons bleiben lesbar. Wird das PDF größer als ZIEL_BYTES, folgt ein zweiter Lauf mit der kleineren Stufe.
+const STUFEN = [{ pixel: 1600, qualitaet: 0.7 }, { pixel: 1200, qualitaet: 0.6 }];
+const ZIEL_BYTES = 4 * 1024 * 1024;
+// Kleine PDF-Dateien (meist Rechnungen mit echtem Text) bleiben unverändert, größere werden Seite für Seite als Bild verkleinert
+const PDF_UNVERAENDERT_BIS = 300 * 1024;
+
+// Canvas mit weißem Hintergrund (transparente Bereiche werden weiß)
+function weissesCanvas(breite, hoehe) {
   const c = document.createElement('canvas');
-  c.width = bmp.width;
-  c.height = bmp.height;
+  c.width = breite;
+  c.height = hoehe;
   const ctx = c.getContext('2d');
   ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, c.width, c.height);
-  ctx.drawImage(bmp, 0, 0);
+  ctx.fillRect(0, 0, breite, hoehe);
+  return { c, ctx };
+}
+
+// Bild (jeder Typ, den der Browser lesen kann) verkleinert als JPEG; kleine Bilder werden nicht vergrößert
+async function verkleinertesJpeg(blob, stufe) {
+  const bmp = await createImageBitmap(blob);
+  const faktor = Math.min(1, stufe.pixel / Math.max(bmp.width, bmp.height));
+  const { c, ctx } = weissesCanvas(Math.round(bmp.width * faktor), Math.round(bmp.height * faktor));
+  ctx.drawImage(bmp, 0, 0, c.width, c.height);
   bmp.close();
-  return canvasAlsBlob(c, 'image/jpeg', JPEG_QUALITAET);
+  return canvasAlsBlob(c, 'image/jpeg', stufe.qualitaet);
 }
 
 // Dateityp aus den ersten Bytes, weil der gespeicherte Typ fehlen oder falsch sein kann (z. B. nach dem Abgleich)
@@ -93,19 +107,38 @@ async function echterTyp(blob) {
   return blob.type || '';
 }
 
-// Bildblob in das PDF-Dokument einbetten: JPEG und PNG direkt, alle anderen Typen über JPEG
-async function bildEinbetten(doc, blob, typ) {
-  if (typ === 'image/jpeg') return doc.embedJpg(await blob.arrayBuffer());
-  if (typ === 'image/png') return doc.embedPng(await blob.arrayBuffer());
-  const jpeg = await alsJpeg(blob);
-  return doc.embedJpg(await jpeg.arrayBuffer());
+// JPEG auf eine A4-Seite einpassen: Seitenverhältnis erhalten, zentriert, mit Rand
+async function jpegSeite(doc, jpeg) {
+  const bild = await doc.embedJpg(await jpeg.arrayBuffer());
+  const quer = bild.width > bild.height;
+  const [breite, hoehe] = quer ? A4_QUER : A4_HOCH;
+  const skala = Math.min((breite - 2 * RAND) / bild.width, (hoehe - 2 * RAND) / bild.height);
+  const w = bild.width * skala;
+  const h = bild.height * skala;
+  const seite = doc.addPage([breite, hoehe]);
+  seite.drawImage(bild, { x: (breite - w) / 2, y: (hoehe - h) / 2, width: w, height: h });
 }
 
 // Belegbilder und PDF-Dateien in ein PDF; Reihenfolge der belege und ihrer bilder = Reihenfolge der Seiten.
 // bildLaden(id) liefert Promise<Blob|null>; fehlende Bilder (null) werden übersprungen.
+// Alle Bilder werden verkleinert (siehe STUFEN), damit die Datei klein bleibt.
 // Ein einzelnes kaputtes Bild bricht das PDF nicht ab. Belege ohne einzige Seite (kein, fehlendes oder kaputtes Bild)
 // stehen danach in blob.ausgelassen.
 export async function belegePdf(belege, bildLaden) {
+  const blobs = new Map();
+  const laden = async (id) => {
+    if (!blobs.has(id)) blobs.set(id, await bildLaden(id));
+    return blobs.get(id);
+  };
+  let ergebnis = null;
+  for (const stufe of STUFEN) {
+    ergebnis = await pdfBauen(belege, laden, stufe);
+    if (ergebnis.size <= ZIEL_BYTES) break;
+  }
+  return ergebnis;
+}
+
+async function pdfBauen(belege, bildLaden, stufe) {
   const { PDFDocument } = await pdfLibLaden();
   const doc = await PDFDocument.create();
   let seiten = 0;
@@ -115,7 +148,7 @@ export async function belegePdf(belege, bildLaden) {
     let eigene = 0;
     for (const id of beleg.bilder ?? []) {
       try {
-        eigene += await seiteAnhaengen(doc, PDFDocument, await bildLaden(id));
+        eigene += await seiteAnhaengen(doc, PDFDocument, await bildLaden(id), stufe);
       } catch (err) {
         console.error('Belegbild übersprungen', id, err);
       }
@@ -136,28 +169,46 @@ export async function belegePdf(belege, bildLaden) {
 }
 
 // Ein Bild oder eine PDF-Datei als Seite(n) anhängen; gibt die Zahl der neuen Seiten zurück
-async function seiteAnhaengen(doc, PDFDocument, blob) {
+async function seiteAnhaengen(doc, PDFDocument, blob, stufe) {
   if (!blob) return 0;
-  const typ = await echterTyp(blob);
-
-  // PDF-Datei: alle Seiten unverändert übernehmen
-  if (typ === 'application/pdf') {
+  if ((await echterTyp(blob)) !== 'application/pdf') {
+    await jpegSeite(doc, await verkleinertesJpeg(blob, stufe));
+    return 1;
+  }
+  // Kleine PDF-Datei: alle Seiten unverändert übernehmen
+  if (blob.size <= PDF_UNVERAENDERT_BIS) {
     const quelle = await PDFDocument.load(await blob.arrayBuffer(), { ignoreEncryption: true });
     const kopien = await doc.copyPages(quelle, quelle.getPageIndices());
     for (const seite of kopien) doc.addPage(seite);
     return kopien.length;
   }
+  // Große PDF-Datei (z. B. gescannte Hotelrechnung): jede Seite als verkleinertes Bild
+  const jpegs = await pdfSeitenAlsJpeg(blob, stufe.pixel, stufe.qualitaet);
+  for (const jpeg of jpegs) await jpegSeite(doc, jpeg);
+  return jpegs.length;
+}
 
-  // Bild: auf eine A4-Seite einpassen, Seitenverhältnis erhalten, zentriert, mit Rand
-  const bild = await bildEinbetten(doc, blob, typ);
-  const quer = bild.width > bild.height;
-  const [breite, hoehe] = quer ? A4_QUER : A4_HOCH;
-  const skala = Math.min((breite - 2 * RAND) / bild.width, (hoehe - 2 * RAND) / bild.height);
-  const w = bild.width * skala;
-  const h = bild.height * skala;
-  const seite = doc.addPage([breite, hoehe]);
-  seite.drawImage(bild, { x: (breite - w) / 2, y: (hoehe - h) / 2, width: w, height: h });
-  return 1;
+// Eine Seite einer geöffneten pdf.js-Datei als JPEG; die längere Seite hat `breite` Pixel
+async function seiteAlsJpeg(pdf, nr, breite, qualitaet) {
+  const seite = await pdf.getPage(nr);
+  const basis = seite.getViewport({ scale: 1 });
+  const ansicht = seite.getViewport({ scale: breite / Math.max(basis.width, basis.height) });
+  const { c, ctx } = weissesCanvas(Math.ceil(ansicht.width), Math.ceil(ansicht.height));
+  await seite.render({ canvasContext: ctx, viewport: ansicht }).promise;
+  return canvasAlsBlob(c, 'image/jpeg', qualitaet);
+}
+
+// Alle Seiten einer PDF-Datei als JPEG
+async function pdfSeitenAlsJpeg(blob, breite, qualitaet) {
+  const pdfjs = await pdfjsLaden();
+  const pdf = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+  try {
+    const liste = [];
+    for (let nr = 1; nr <= pdf.numPages; nr++) liste.push(await seiteAlsJpeg(pdf, nr, breite, qualitaet));
+    return liste;
+  } finally {
+    await pdf.destroy();
+  }
 }
 
 // Erste Seite einer PDF-Datei als JPEG (weißer Hintergrund); die längere Seite hat `breite` Pixel
@@ -165,18 +216,7 @@ export async function pdfErsteSeite(blob, breite = 1600) {
   const pdfjs = await pdfjsLaden();
   const pdf = await pdfjs.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
   try {
-    const seite = await pdf.getPage(1);
-    const basis = seite.getViewport({ scale: 1 });
-    const skala = breite / Math.max(basis.width, basis.height);
-    const ansicht = seite.getViewport({ scale: skala });
-    const c = document.createElement('canvas');
-    c.width = Math.ceil(ansicht.width);
-    c.height = Math.ceil(ansicht.height);
-    const ctx = c.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, c.width, c.height);
-    await seite.render({ canvasContext: ctx, viewport: ansicht }).promise;
-    return await canvasAlsBlob(c, 'image/jpeg', JPEG_QUALITAET);
+    return await seiteAlsJpeg(pdf, 1, breite, JPEG_QUALITAET);
   } finally {
     await pdf.destroy();
   }
