@@ -2,7 +2,7 @@
 // Neue Fotos werden erst beim Sichern im Speicher abgelegt, damit Abbrechen keine Bilder ohne Kontakt hinterlässt.
 // Beim Zuschneiden ersetzt das Zuschnitt-Sheet den Inhalt des Sheets; der Stand des Formulars wird deshalb
 // vorher gelesen und danach wieder aufgebaut.
-import { bildLaden, bildSpeichern, loeschen, speichern } from './speicher.js';
+import { alle, bildLaden, bildSpeichern, loeschen, speichern } from './speicher.js';
 import { bildHolen, einrichtungLaden } from './abgleich.js';
 import { kontaktName, vcard, visitenkarteLesen } from './kontakte.js';
 // Namensraum statt benannter Importe: fehlt eine Funktion, bricht so nicht das ganze Modul
@@ -650,7 +650,11 @@ function formularOeffnen(stand, kontext) {
       // Outlook: der bisherige Status merkt sich in vorher, damit eigene Outlook-Kontakte korrigiert werden
       const alt = stand.outlook ?? {};
       const vorher = alt.status === 'offen' ? (alt.vorher ?? '') : (alt.status ?? '');
+      // Beim Bearbeiten den gespeicherten Kontakt als Grundlage nehmen: Felder außerhalb des Formulars
+      // (Lead, Auswertung, eigene Mail, auswertungAus …) bleiben so erhalten
+      const bisher = stand.id ? ((await alle('kontakte')).find((x) => String(x.id) === String(stand.id)) ?? {}) : {};
       const gesichert = await speichern('kontakte', {
+        ...bisher,
         ...(stand.originale ?? {}), // Originale der Fotos bleiben erhalten
         ...daten,
         id: stand.id ?? null,
