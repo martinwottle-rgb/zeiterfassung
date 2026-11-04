@@ -142,7 +142,8 @@ export async function einstellungenLaden() {
   const speicher = t.objectStore('einstellungen');
   const gespeichert = await warte(speicher.get(EINSTELLUNGEN_SCHLUESSEL));
   if (gespeichert !== undefined) return { ...vorgaben(), ...gespeichert };
-  const erste = { ...vorgaben(), geaendert: Date.now() };
+  // geaendert 0: frische Vorgaben eines neuen Geräts dürfen beim Abgleich nichts Vorhandenes überschreiben
+  const erste = { ...vorgaben(), geaendert: 0 };
   speicher.put(erste, EINSTELLUNGEN_SCHLUESSEL);
   await abschluss(t);
   melden();
@@ -273,6 +274,26 @@ function zusammenfuehren(speicher, eintrag, zaehler) {
   };
 }
 
+// Zwei Stände der Einstellungen zusammenführen. Einfache Werte: der neuere Stand gewinnt, fehlende Felder bleiben.
+// Auswertungen: Vereinigung nach id (bei beiden vorhanden gilt die Fassung des neueren Stands).
+// Vorlagen für Claude: die mit dem höheren Stand.
+export function einstellungenVereinen(alt, fern) {
+  if (!alt) return fern;
+  if (!fern) return alt;
+  const fernNeuer = (fern.geaendert ?? 0) > (alt.geaendert ?? 0);
+  const [aelter, neuer] = fernNeuer ? [alt, fern] : [fern, alt];
+  const ergebnis = { ...aelter, ...neuer };
+  const nachId = new Map();
+  for (const l of aelter.auswertungen ?? []) nachId.set(String(l.id), l);
+  for (const l of neuer.auswertungen ?? []) nachId.set(String(l.id), l);
+  const reihenfolge = [...(neuer.auswertungen ?? []), ...(aelter.auswertungen ?? [])].map((l) => String(l.id));
+  const auswertungen = [...new Set(reihenfolge)].map((id) => nachId.get(id));
+  if (auswertungen.length) ergebnis.auswertungen = auswertungen;
+  const va = alt.claudeVorlagen, vf = fern.claudeVorlagen;
+  if (va || vf) ergebnis.claudeVorlagen = (vf?.stand ?? 0) > (va?.stand ?? 0) ? vf : va;
+  return ergebnis;
+}
+
 // Führt eine Sicherung in einer Transaktion mit dem Bestand zusammen.
 export async function importieren(daten) {
   const t = await transaktion(['bloecke', 'abwesenheiten', 'reisen', 'kontakte', 'belege', 'ablage', 'einstellungen'], 'readwrite');
@@ -284,14 +305,15 @@ export async function importieren(daten) {
   for (const k of daten?.kontakte ?? []) if (k?.id != null) zusammenfuehren(t.objectStore('kontakte'), k, z);
   for (const b of daten?.belege ?? []) if (b?.id != null) zusammenfuehren(t.objectStore('belege'), b, z);
   for (const a of daten?.ablage ?? []) if (a?.id != null) zusammenfuehren(t.objectStore('ablage'), a, z);
-  // Einstellungen nur übernehmen, wenn sie neuer sind
+  // Einstellungen feldweise zusammenführen, nie ganz ersetzen (sonst löscht ein frisch eingerichtetes Gerät Auswertungen und Vorlagen)
   const e = daten?.einstellungen;
   if (e) {
     const speicher = t.objectStore('einstellungen');
     speicher.get(EINSTELLUNGEN_SCHLUESSEL).onsuccess = (ev) => {
       const alt = ev.target.result;
-      if (!alt || (e.geaendert ?? 0) > (alt.geaendert ?? 0)) {
-        speicher.put(e, EINSTELLUNGEN_SCHLUESSEL);
+      const neu = einstellungenVereinen(alt, e);
+      if (JSON.stringify(neu) !== JSON.stringify(alt)) {
+        speicher.put(neu, EINSTELLUNGEN_SCHLUESSEL);
         z.n++;
       }
     };
