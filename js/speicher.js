@@ -154,7 +154,16 @@ export async function einstellungenSpeichern(e) {
   const t = await transaktion(['einstellungen'], 'readwrite');
   const speicher = t.objectStore('einstellungen');
   const alt = await warte(speicher.get(EINSTELLUNGEN_SCHLUESSEL));
-  const neu = { ...e, geaendert: neuerStempel(alt) };
+  const stempel = neuerStempel(alt);
+  // Jedes geänderte Feld bekommt einen eigenen Zeitstempel; der Abgleich führt danach feldweise zusammen
+  const feldStand = { ...(alt?.feldStand ?? {}), ...(e.feldStand ?? {}) };
+  const std = vorgaben();
+  for (const [k, v] of Object.entries(e)) {
+    if (SONDERFELDER.has(k)) continue;
+    const vorher = alt && k in alt ? alt[k] : std[k];
+    if (JSON.stringify(v) !== JSON.stringify(vorher)) feldStand[k] = stempel;
+  }
+  const neu = { ...e, feldStand, geaendert: stempel };
   speicher.put(neu, EINSTELLUNGEN_SCHLUESSEL);
   await abschluss(t);
   melden();
@@ -277,12 +286,32 @@ function zusammenfuehren(speicher, eintrag, zaehler) {
 // Zwei Stände der Einstellungen zusammenführen. Einfache Werte: der neuere Stand gewinnt, fehlende Felder bleiben.
 // Auswertungen: Vereinigung nach id (bei beiden vorhanden gilt die Fassung des neueren Stands).
 // Vorlagen für Claude: die mit dem höheren Stand.
+// Einfache Felder: der höhere Feld-Zeitstempel (feldStand) gewinnt. Ohne Stempel auf beiden Seiten (alte Stände):
+// ein Wert, der von den Vorgaben abweicht, schlägt einen Vorgabewert; „start“ nimmt das frühere Datum.
+const SONDERFELDER = new Set(['geaendert', 'feldStand', 'auswertungen', 'claudeVorlagen']);
 export function einstellungenVereinen(alt, fern) {
   if (!alt) return fern;
   if (!fern) return alt;
   const fernNeuer = (fern.geaendert ?? 0) > (alt.geaendert ?? 0);
   const [aelter, neuer] = fernNeuer ? [alt, fern] : [fern, alt];
   const ergebnis = { ...aelter, ...neuer };
+  const std = vorgaben();
+  const gleich = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const feldStand = {};
+  const felder = new Set([...Object.keys(alt), ...Object.keys(fern)].filter((k) => !SONDERFELDER.has(k)));
+  for (const k of felder) {
+    const sa = alt.feldStand?.[k] ?? 0;
+    const sf = fern.feldStand?.[k] ?? 0;
+    if (Math.max(sa, sf) > 0) feldStand[k] = Math.max(sa, sf);
+    if (!(k in alt)) { ergebnis[k] = fern[k]; continue; }
+    if (!(k in fern)) { ergebnis[k] = alt[k]; continue; }
+    if (sf !== sa) { ergebnis[k] = sf > sa ? fern[k] : alt[k]; continue; }
+    if (k === 'start' && alt.start && fern.start) { ergebnis.start = alt.start < fern.start ? alt.start : fern.start; continue; }
+    const altStd = k in std && gleich(alt[k], std[k]);
+    const fernStd = k in std && gleich(fern[k], std[k]);
+    if (altStd !== fernStd) ergebnis[k] = altStd ? fern[k] : alt[k];
+  }
+  ergebnis.feldStand = feldStand;
   const nachId = new Map();
   for (const l of aelter.auswertungen ?? []) nachId.set(String(l.id), l);
   for (const l of neuer.auswertungen ?? []) nachId.set(String(l.id), l);
